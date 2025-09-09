@@ -1,6 +1,6 @@
 from collections import OrderedDict
+import math
 from pathlib import Path
-
 
 import numpy as np
 import fastplotlib as fpl
@@ -9,6 +9,7 @@ from tqdm import tqdm
 import cv2
 import pygfx
 
+from utils import LazyVideo
 
 VALID_DEMIXING_VIDS = ["raw", "ac", "fbg", "baseline", "pmd", "residuals"]
 
@@ -45,6 +46,24 @@ def area_to_vertices(a: np.ndarray) -> np.ndarray:
     return c
 
 
+def find_nearest_index(timepoints: np.ndarray, find_value: float):
+    # find the index of the data closest to given timepoint
+
+    # get closest data index to the world space position of the selector
+    idx = np.searchsorted(timepoints, find_value, side="left")
+
+    # bisection algo is the fastest way to do this
+    # math.fabs is faster than numpy abs for this usecase
+    if idx > 0 and (
+            idx == len(timepoints)
+            or math.fabs(find_value - timepoints[idx - 1])
+            < math.fabs(find_value - timepoints[idx])
+    ):
+        return round(idx - 1)
+    else:
+        return round(idx)
+
+
 class OphysViz:
     def __init__(
             self,
@@ -78,7 +97,6 @@ class OphysViz:
 
         # similarly, outer list is per-plane, inner list is identical graphics, one per display selection
         self.contours_graphics: list[list[fpl.LineGraphic]] = [list() for i in range(self._n_planes)]
-
 
         # data arrays for each plane
         for z_index in range(self._n_planes):
@@ -122,42 +140,42 @@ class OphysViz:
         )
 
         print("create contour graphics")
+        # TODO: Share data buffers so that we save GPU RAM!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for subplot in tqdm(self._iw_calcium_vids.figure):
             # add contours
-            # TODO: Share data buffers so that we save GPU RAM!!
             for i in range(self._n_planes):
-                contours_g = subplot.add_line_collection(data=self._contours_data[i], colors=(1, 1, 1, 0.05), thickness=1.1, name=f"contours-plane-{i}")
+                contours_g = subplot.add_line_collection(data=self._contours_data[i], colors=(1, 1, 1, 0.05), thickness=1.1, name=f"contours-plane-{i}", alpha=0.05)
                 self.contours_graphics[i].append(contours_g)
                 if i > 0:
                     contours_g.visible = False
 
         # when image clicked, highlight nearest contour
         for g in self._iw_calcium_vids.managed_graphics:
-            g.add_event_handler(self._image_clicked, "click")
+            g.add_event_handler(self._image_clicked, "double_click")
 
         self._iw_calcium_vids.show()
 
-        self.fig_heatmap = fpl.Figure(names="heatmap")
+        self.iw_heatmap = fpl.ImageWidget(self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis", names=["heatmap"])
 
-        heatmap = self.fig_heatmap[0, 0].add_image(self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis")
+        heatmap = self.iw_heatmap.managed_graphics[0]
 
         self._heatmap_time_sel = heatmap.add_linear_selector()
-        self._heatmap_time_sel.add_event_handler(self._current_index_changed, "selection")
+        self._heatmap_time_sel.add_event_handler(self._current_time_index_changed, "selection")
 
         self._heatmap_comp_sel = heatmap.add_linear_selector(axis="y")
 
         self._heatmap_comp_sel.add_event_handler(self._component_index_changed, "selection")
 
-        self.fig_heatmap.show(maintain_aspect=False)
+        self.iw_heatmap.show(maintain_aspect=False)
 
         self.fig_selected_temporal = fpl.Figure()
         self.component_temporal_graphic = self.fig_selected_temporal[0, 0].add_line(heatmap.data[0], thickness=1.0)
         self.temporal_linear_selector = self.component_temporal_graphic.add_linear_selector()
-        self.temporal_linear_selector.add_event_handler(self._current_index_changed, "selection")
+        self.temporal_linear_selector.add_event_handler(self._current_time_index_changed, "selection")
 
         self.fig_selected_temporal.show(maintain_aspect=False)
 
-        self._iw_calcium_vids.add_event_handler(self._current_index_changed)
+        self._iw_calcium_vids.add_event_handler(self._current_time_index_changed)
 
         # used to display the activity of the hovered pixel in each displayed demixing movie
         # TODO: Should sync x axis scale of this but not y-axis scales across cameras
@@ -174,7 +192,7 @@ class OphysViz:
             #
             # # make a linear selector
             self._pixel_plot_selectors.append(sel)
-            sel.add_event_handler(self._current_index_changed, "selection")
+            sel.add_event_handler(self._current_time_index_changed, "selection")
 
             #
             # # update line plot when iw graphic is clicked
@@ -183,9 +201,60 @@ class OphysViz:
             # scatter point to indicate current clicked pixel
             self._pixel_clicked_scatters.append(self._iw_calcium_vids.figure[name].add_scatter(np.array([[0, 0, 1]]), colors=[1, 1, 1, 0.5], sizes=10))
 
+        for subplot in self.fig_temporal_pixel:
+            subplot.toolbar = False
+
         self.fig_temporal_pixel.show(maintain_aspect=False)
 
         self._z_index = 0
+
+        print("Loading behavior vids")
+        self.behavior_vid_l = LazyVideo("/home/kushal/amol_data/kushal_datashare/_iblrig_leftCamera.raw.mp4", as_grayscale=False)
+        self.behavior_vid_r = LazyVideo("/home/kushal/amol_data/kushal_datashare/_iblrig_rightCamera.raw.mp4", as_grayscale=False)
+
+        self._fig_behavior_vids = fpl.Figure(shape=(1, 2), names=["left", "right"])
+
+        self._fig_behavior_vids["left"].add_image(self.behavior_vid_l[0], name="image")
+        self._fig_behavior_vids["right"].add_image(self.behavior_vid_r[0], name="image")
+
+        self._fig_behavior_vids.show()
+
+        behavior_data_l = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_leftcam.npz", allow_pickle=True)["data"][()]
+        behavior_data_r = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_rightcam.npz", allow_pickle=True)["data"][()]
+
+        self.behavior_vid_left_timings = behavior_data_l["times"]
+        self.behavior_vid_right_timings = behavior_data_r["times"]
+
+        self.dlc_left = behavior_data_l["dlc"]
+        self.dlc_right = behavior_data_r["dlc"]
+
+        # every 3rd column is likelihood
+        self.lh_ixs_l = list(range(2, len(self.dlc_left.columns), 3))
+        self.point_ixs_l = [i for i in range(len(self.dlc_left.columns)) if i not in self.lh_ixs_l]
+        self.x_cols_l = self.dlc_left.columns[self.point_ixs_l][::2]
+        self.y_cols_l = self.dlc_left.columns[self.point_ixs_l][1::2]
+        self.lh_cols_l = self.dlc_left.columns[self.lh_ixs_l]
+
+        index = 0
+        points = np.column_stack([self.dlc_left[self.x_cols_l].iloc[index].to_numpy(), self.dlc_left[self.y_cols_l].iloc[index].to_numpy()])
+        alpha = self.dlc_left[self.lh_cols_l].iloc[index].to_numpy()
+
+        self._fig_behavior_vids["left"].add_scatter(points, cmap="tab20", sizes=10, name="keypoints", alpha=alpha)
+
+        self.lh_ixs_r = list(range(2, len(self.dlc_right.columns), 3))
+        self.point_ixs_r = [i for i in range(len(self.dlc_right.columns)) if i not in self.lh_ixs_r]
+        self.x_cols_r = self.dlc_right.columns[self.point_ixs_r][::2]
+        self.y_cols_r = self.dlc_right.columns[self.point_ixs_r][1::2]
+        self.lh_cols_r = self.dlc_right.columns[self.lh_ixs_r]
+
+        index = 0
+        points = np.column_stack(
+            [self.dlc_right[self.x_cols_r].iloc[index].to_numpy(), self.dlc_right[self.y_cols_r].iloc[index].to_numpy()])
+        alpha = self.dlc_right[self.lh_cols_r].iloc[index].to_numpy()
+
+        self._fig_behavior_vids["right"].add_scatter(points, cmap="tab20", sizes=10, name="keypoints", alpha=alpha)
+
+        self._block_reentrance = False
 
     @property
     def z_index(self) -> int:
@@ -207,19 +276,12 @@ class OphysViz:
         for g in self.contours_graphics[self._z_index]:
             g.visible = True
 
-        # delete and add new heatmap graphic
-        self.fig_heatmap[0, 0].clear()
-
-        heatmap = self.fig_heatmap[0, 0].add_image(self.demixed_data[self._z_index].c.T.cpu().numpy())
-
-        self._heatmap_time_sel = heatmap.add_linear_selector()
-        self._heatmap_time_sel.add_event_handler(self._current_index_changed, "selection")
-
-        self._heatmap_comp_sel = heatmap.add_linear_selector(axis="y")
-
-        self._heatmap_comp_sel.add_event_handler(self._component_index_changed, "selection")
-
-        # reset component index, temporal graphic will automatically chage
+        # set heatmap for current plane
+        new_c = self.demixed_data[self._z_index].c.T.cpu().numpy()
+        self._heatmap_comp_sel.selection = 0
+        self._heatmap_comp_sel.limits = (0, new_c.shape[1])
+        self._heatmap_time_sel.selection = 0
+        self.iw_heatmap.set_data(new_c)
 
     @property
     def demixing_display_selection(self) -> tuple[str]:
@@ -243,11 +305,11 @@ class OphysViz:
 
     @property
     def fig_behavior_vids(self) -> fpl.Figure:
-        pass
+        return self._fig_behavior_vids
 
     def set_component_index(self, index: int, clear: bool = True):
         if clear:
-            for i in range(len(self.demixed_data)):
+            for i in range(len(self.demixing_display_selection)):
                 # make all contours low alpha and thin
                 self.contours_graphics[self.z_index][i].colors[:] = [1, 1, 1, 0.05]
                 self.contours_graphics[self.z_index][i].thickness[:] = 1
@@ -262,19 +324,24 @@ class OphysViz:
                 for g in self.fig_selected_temporal[0, 0].graphics[1:]:
                     self.fig_selected_temporal[0, 0].delete_graphic(g)
 
-            self.component_temporal_graphic.data[:, 1] = self.fig_heatmap[0, 0].graphics[0].data[index]
+            self.component_temporal_graphic.data[:, 1] = self.iw_heatmap.managed_graphics[0].data[index]
 
         # add an extra graphic and highlight for comparison
         else:
             # set higher alpha and thickness of selected component
-            for i in range(len(self.demixed_data)):
+            for i in range(len(self.demixing_display_selection)):
                 self.contours_graphics[self.z_index][i].graphics[index].colors = "r"
                 self.contours_graphics[self.z_index][i].graphics[index].thickness = 3.0
 
-            self.fig_selected_temporal[0, 0].add_line(self.fig_heatmap[0, 0].graphics[0].data[index], thickness=1, colors="r")
+            self.fig_selected_temporal[0, 0].add_line(self.iw_heatmap.managed_graphics[0].data[index], thickness=1, colors="r")
 
+    def _current_time_index_changed(self, ev):
+        # TODO: fastplotlib is supposed to block re-entrance under the hood,
+        #  something that's being used here doesn't have a reentrance block, need to check!
+        if self._block_reentrance:
+            return
 
-    def _current_index_changed(self, ev):
+        self._block_reentrance = True
         if isinstance(ev, dict):
             index = ev["t"]
 
@@ -289,6 +356,33 @@ class OphysViz:
         self._heatmap_time_sel.selection = index
 
         self.temporal_linear_selector.selection = index
+
+        time_from_calcium = self._calcium_timings[index]
+
+        behavior_left_index = find_nearest_index(self.behavior_vid_left_timings, time_from_calcium)
+        behavior_right_index = find_nearest_index(self.behavior_vid_right_timings, time_from_calcium)
+
+        # set left and right images using current frame
+        self.fig_behavior_vids["left"]["image"].data = self.behavior_vid_l[behavior_left_index]
+        self.fig_behavior_vids["right"]["image"].data = self.behavior_vid_r[behavior_right_index]
+
+        # update keypoints
+        points = np.column_stack(
+            [self.dlc_left[self.x_cols_l].iloc[index].to_numpy(), self.dlc_left[self.y_cols_l].iloc[index].to_numpy()])
+        alpha = self.dlc_left[self.lh_cols_l].iloc[index].to_numpy()
+
+        self._fig_behavior_vids["left"]["keypoints"].data[:, :-1] = points
+        self._fig_behavior_vids["left"]["keypoints"].colors[:, -1] = alpha
+
+        points = np.column_stack(
+            [self.dlc_right[self.x_cols_r].iloc[index].to_numpy(),
+             self.dlc_right[self.y_cols_r].iloc[index].to_numpy()])
+        alpha = self.dlc_right[self.lh_cols_r].iloc[index].to_numpy()
+
+        self._fig_behavior_vids["right"]["keypoints"].data[:, :-1] = points
+        self._fig_behavior_vids["right"]["keypoints"].colors[:, -1] = alpha
+
+        self._block_reentrance = False
 
     def _image_clicked(self, ev):
         if "Control" in ev.modifiers:
@@ -328,17 +422,17 @@ class OphysViz:
 
 if __name__ == "__main__":
     raw_vid_paths = [
-        f"/media/kushal/kushal_ssd/amol_data/SP044/2023-06-27/001/suite2p/plane{i}/imaging.frames_motionRegistered.bin" for i in range(7, 9)
+        f"/media/kushal/kushal_ssd/amol_data/SP044/2023-06-27/001/suite2p/plane{i}/imaging.frames_motionRegistered.bin" for i in range(7, 8)
     ]
 
     demixed_paths = [
-        f"/media/kushal/kushal_ssd/amol_data/demixing_plane{i}.npz" for i in range(7, 9)
+        f"/media/kushal/kushal_ssd/amol_data/demixing_plane{i}.npz" for i in range(7, 8)
     ]
 
     viz = OphysViz(
         raw_vid_paths=raw_vid_paths,
         demixed_paths=demixed_paths,
-        demixing_display_selection=["raw", "ac"]
+        demixing_display_selection=["raw", "pmd", "ac", "residuals"]
     )
 
     fpl.loop.run()
