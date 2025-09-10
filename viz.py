@@ -119,15 +119,12 @@ class OphysViz:
             names=self.demixing_display_selection,
             figure_kwargs={"size": (1000, 1200), "show_tooltips": True}
         )
-
-        for subplot in self._iw_calcium_vids.figure:
-            subplot.toolbar = False
-            subplot.axes.visible = False
-            subplot.camera.zoom = 1.2
+        self._iw_calcium_vids.figure.renderer.pixel_ratio = 1.0
 
         # when image clicked, highlight nearest contour
         for g in self._iw_calcium_vids.managed_graphics:
             g.add_event_handler(self._image_clicked, "double_click")
+            self._iw_calcium_vids.figure.tooltip_manager.register(g, custom_info=self._tooltip_info)
 
         # add raster mask, one for each demixed display option
         self.raster_masks = [list() for i in range(self._n_planes)]
@@ -143,9 +140,15 @@ class OphysViz:
 
         self._iw_calcium_vids.show()
 
+        for subplot in self._iw_calcium_vids.figure:
+            subplot.toolbar = False
+            subplot.axes.visible = False
+            subplot.camera.zoom = 1.2
+
         self.iw_heatmap = fpl.ImageWidget(
             self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis", names=["heatmap"], figure_kwargs={"size": (1000, 1200)}
         )
+        self.iw_heatmap.figure.renderer.pixel_ratio = 1.0
 
         heatmap = self.iw_heatmap.managed_graphics[0]
 
@@ -158,7 +161,8 @@ class OphysViz:
 
         self.iw_heatmap.show(maintain_aspect=False)
 
-        self.fig_selected_temporal = fpl.Figure(size=(1000, 300))
+        self.fig_selected_temporal = fpl.Figure(size=(1500, 300), names=["temporal activity of selected component"])
+        self.fig_selected_temporal.renderer.pixel_ratio = 1.0
         self.component_temporal_graphic = self.fig_selected_temporal[0, 0].add_line(heatmap.data[0], thickness=1.0)
         self.temporal_linear_selector = self.component_temporal_graphic.add_linear_selector()
         self.temporal_linear_selector.add_event_handler(self._current_time_index_changed, "selection")
@@ -172,8 +176,9 @@ class OphysViz:
         self.fig_temporal_pixel = fpl.Figure(
             shape=(len(self.demixing_display_selection), 1),
             names=self.demixing_display_selection,
-            size=(1000, 700)
+            size=(1500, 700)
         )
+        self.fig_temporal_pixel.renderer.pixel_ratio = 1.0
         self._pixel_plot_selectors: list[fpl.LinearSelector] = list()
         self._pixel_clicked_scatters: list[fpl.ScatterGraphic] = list()
 
@@ -204,16 +209,16 @@ class OphysViz:
         self.behavior_vid_r = zarr.open("/home/kushal/repos/epic-neuro-viz/right_vid.zarr")
 
         self._fig_behavior_vids = fpl.Figure(shape=(1, 2), names=["left", "right"], size=(1200, 500))
+        self._fig_behavior_vids.renderer.pixel_ratio = 1.0
 
-        self._fig_behavior_vids["left"].add_image(self.behavior_vid_l[0], name="image")
-        self._fig_behavior_vids["right"].add_image(self.behavior_vid_r[0], name="image")
+        self._fig_behavior_vids["left"].add_image(self.behavior_vid_l[0], name="image", cmap="gray")
+        self._fig_behavior_vids["right"].add_image(self.behavior_vid_r[0], name="image", cmap="gray")
 
         self._fig_behavior_vids.show()
 
         for subplot in self._fig_behavior_vids:
             subplot.axes.visible = False
             subplot.toolbar = False
-            subplot.camera.zoom = 1.2
 
         behavior_data_l = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_leftcam.npz", allow_pickle=True)["data"][()]
         behavior_data_r = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_rightcam.npz", allow_pickle=True)["data"][()]
@@ -401,6 +406,15 @@ class OphysViz:
 
         for subplot in self.fig_temporal_pixel:
             subplot.auto_scale()
+
+    def _tooltip_info(self, ev) -> str:
+        col, row = ev.pick_info["index"]
+        index = self.raster_masks[self.z_index][0].find_closest((row, col))
+
+        info = f"comp index: {index}"
+
+        # return this string to display it in the tooltip
+        return info
 
 
 if __name__ == "__main__":
