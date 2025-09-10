@@ -4,12 +4,12 @@ from pathlib import Path
 
 import numpy as np
 import fastplotlib as fpl
-import pynapple as nap
+import zarr
 from tqdm import tqdm
 import cv2
 import pygfx
 
-from utils import LazyVideo
+from raster_mask import RasterMask
 
 VALID_DEMIXING_VIDS = ["raw", "ac", "fbg", "baseline", "pmd", "residuals"]
 
@@ -78,10 +78,6 @@ class OphysViz:
 
         self.demixed_data = list()
 
-        # contours and coms (center of mass) data, each item in the list is for one plane
-        self._contours_data = list()
-        self._contours_coms = list()
-
         print("loading demixed data")
         for path in tqdm(demixed_paths):
             self.demixed_data.append(np.load(path, allow_pickle=True)["results"][()])
@@ -94,9 +90,6 @@ class OphysViz:
 
         # outer list is per-plane, inner list is the various display selections
         self._demixed_arrays = [list() for i in range(self._n_planes)]
-
-        # similarly, outer list is per-plane, inner list is identical graphics, one per display selection
-        self.contours_graphics: list[list[fpl.LineGraphic]] = [list() for i in range(self._n_planes)]
 
         # data arrays for each plane
         for z_index in range(self._n_planes):
@@ -113,20 +106,7 @@ class OphysViz:
                     array = getattr(self.demixed_data[z_index], DEMIXING_MAP[selection])
                 self._demixed_arrays[z_index].append(array)
 
-        print("creating vertices from spatial components")
-        for z_index in tqdm(range(self._n_planes)):
-            self._contours_data.append(list())
-            self._contours_coms.append(list())
-            for comp_index in range(self.demixed_data[z_index].a.shape[1]):
-                A_i = self.demixed_data[z_index].a.to_dense()[:, comp_index].cpu().numpy().reshape(512, 512)
-
-                vertices = area_to_vertices(A_i)
-                com = vertices.mean(axis=0)
-
-                self._contours_data[z_index].append(vertices)
-                self._contours_coms[z_index].append(com)
-            self._contours_coms[z_index] = np.array(self._contours_coms[z_index])
-
+        print("creating raster masks from spatial components")
 
         self._calcium_timings = np.load("/home/kushal/amol_data/SP044/2023-06-27/001/alf/FOV_07/mpci.times.npy")
 
@@ -136,26 +116,36 @@ class OphysViz:
             data=self._demixed_arrays[0],
             cmap="viridis",
             histogram_widget=False,
-            names=self.demixing_display_selection
+            names=self.demixing_display_selection,
+            figure_kwargs={"size": (1000, 1200), "show_tooltips": True}
         )
 
-        print("create contour graphics")
-        # TODO: Share data buffers so that we save GPU RAM!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        for subplot in tqdm(self._iw_calcium_vids.figure):
-            # add contours
-            for i in range(self._n_planes):
-                contours_g = subplot.add_line_collection(data=self._contours_data[i], colors=(1, 1, 1, 0.05), thickness=1.1, name=f"contours-plane-{i}", alpha=0.05)
-                self.contours_graphics[i].append(contours_g)
-                if i > 0:
-                    contours_g.visible = False
+        for subplot in self._iw_calcium_vids.figure:
+            subplot.toolbar = False
+            subplot.axes.visible = False
+            subplot.camera.zoom = 1.2
 
         # when image clicked, highlight nearest contour
         for g in self._iw_calcium_vids.managed_graphics:
             g.add_event_handler(self._image_clicked, "double_click")
 
+        # add raster mask, one for each demixed display option
+        self.raster_masks = [list() for i in range(self._n_planes)]
+        for z_index in range(self._n_planes):
+            for i, subplot in zip(range(len(self.demixing_display_selection)), self._iw_calcium_vids.figure):
+                rm = RasterMask(
+                    sparse_data=self.demixed_data[z_index].a,
+                    dense_shape=self.demixed_data[z_index].shape[1:],
+                    offset=(0, 0, 2)
+                )
+                subplot.add_graphic(rm)
+                self.raster_masks[z_index].append(rm)
+
         self._iw_calcium_vids.show()
 
-        self.iw_heatmap = fpl.ImageWidget(self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis", names=["heatmap"])
+        self.iw_heatmap = fpl.ImageWidget(
+            self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis", names=["heatmap"], figure_kwargs={"size": (1000, 1200)}
+        )
 
         heatmap = self.iw_heatmap.managed_graphics[0]
 
@@ -168,7 +158,7 @@ class OphysViz:
 
         self.iw_heatmap.show(maintain_aspect=False)
 
-        self.fig_selected_temporal = fpl.Figure()
+        self.fig_selected_temporal = fpl.Figure(size=(1000, 300))
         self.component_temporal_graphic = self.fig_selected_temporal[0, 0].add_line(heatmap.data[0], thickness=1.0)
         self.temporal_linear_selector = self.component_temporal_graphic.add_linear_selector()
         self.temporal_linear_selector.add_event_handler(self._current_time_index_changed, "selection")
@@ -181,7 +171,8 @@ class OphysViz:
         # TODO: Should sync x axis scale of this but not y-axis scales across cameras
         self.fig_temporal_pixel = fpl.Figure(
             shape=(len(self.demixing_display_selection), 1),
-            names=self.demixing_display_selection
+            names=self.demixing_display_selection,
+            size=(1000, 700)
         )
         self._pixel_plot_selectors: list[fpl.LinearSelector] = list()
         self._pixel_clicked_scatters: list[fpl.ScatterGraphic] = list()
@@ -199,7 +190,7 @@ class OphysViz:
             self._iw_calcium_vids.figure[name]["image_widget_managed"].add_event_handler(self._update_temporal_pixel_lines, "click")
 
             # scatter point to indicate current clicked pixel
-            self._pixel_clicked_scatters.append(self._iw_calcium_vids.figure[name].add_scatter(np.array([[0, 0, 1]]), colors=[1, 1, 1, 0.5], sizes=10))
+            self._pixel_clicked_scatters.append(self._iw_calcium_vids.figure[name].add_scatter(np.array([[0, 0, 2]]), colors=[1, 1, 1, 0.5], sizes=10))
 
         for subplot in self.fig_temporal_pixel:
             subplot.toolbar = False
@@ -209,15 +200,20 @@ class OphysViz:
         self._z_index = 0
 
         print("Loading behavior vids")
-        self.behavior_vid_l = LazyVideo("/home/kushal/amol_data/kushal_datashare/_iblrig_leftCamera.raw.mp4", as_grayscale=False)
-        self.behavior_vid_r = LazyVideo("/home/kushal/amol_data/kushal_datashare/_iblrig_rightCamera.raw.mp4", as_grayscale=False)
+        self.behavior_vid_l = zarr.open("/home/kushal/repos/epic-neuro-viz/left_vid.zarr")
+        self.behavior_vid_r = zarr.open("/home/kushal/repos/epic-neuro-viz/right_vid.zarr")
 
-        self._fig_behavior_vids = fpl.Figure(shape=(1, 2), names=["left", "right"])
+        self._fig_behavior_vids = fpl.Figure(shape=(1, 2), names=["left", "right"], size=(1200, 500))
 
         self._fig_behavior_vids["left"].add_image(self.behavior_vid_l[0], name="image")
         self._fig_behavior_vids["right"].add_image(self.behavior_vid_r[0], name="image")
 
         self._fig_behavior_vids.show()
+
+        for subplot in self._fig_behavior_vids:
+            subplot.axes.visible = False
+            subplot.toolbar = False
+            subplot.camera.zoom = 1.2
 
         behavior_data_l = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_leftcam.npz", allow_pickle=True)["data"][()]
         behavior_data_r = np.load("/home/kushal/amol_data/kushal_datashare/behavior_features_rightcam.npz", allow_pickle=True)["data"][()]
@@ -235,11 +231,16 @@ class OphysViz:
         self.y_cols_l = self.dlc_left.columns[self.point_ixs_l][1::2]
         self.lh_cols_l = self.dlc_left.columns[self.lh_ixs_l]
 
-        index = 0
-        points = np.column_stack([self.dlc_left[self.x_cols_l].iloc[index].to_numpy(), self.dlc_left[self.y_cols_l].iloc[index].to_numpy()])
-        alpha = self.dlc_left[self.lh_cols_l].iloc[index].to_numpy()
+        # produce [n_frames, n_points, 2] array
+        self.keypoints_left = np.dstack(
+            [self.dlc_left[self.x_cols_l].to_numpy(), self.dlc_left[self.y_cols_l].to_numpy()]
+        )
 
-        self._fig_behavior_vids["left"].add_scatter(points, cmap="tab20", sizes=10, name="keypoints", alpha=alpha)
+        self.keypoints_alpha_left = self.dlc_left[self.lh_cols_l].to_numpy()
+
+        self._fig_behavior_vids["left"].add_scatter(
+            self.keypoints_left[0], cmap="tab20", sizes=10, name="keypoints", alpha=self.keypoints_alpha_left[0]
+        )
 
         self.lh_ixs_r = list(range(2, len(self.dlc_right.columns), 3))
         self.point_ixs_r = [i for i in range(len(self.dlc_right.columns)) if i not in self.lh_ixs_r]
@@ -247,12 +248,16 @@ class OphysViz:
         self.y_cols_r = self.dlc_right.columns[self.point_ixs_r][1::2]
         self.lh_cols_r = self.dlc_right.columns[self.lh_ixs_r]
 
-        index = 0
-        points = np.column_stack(
-            [self.dlc_right[self.x_cols_r].iloc[index].to_numpy(), self.dlc_right[self.y_cols_r].iloc[index].to_numpy()])
-        alpha = self.dlc_right[self.lh_cols_r].iloc[index].to_numpy()
+        # produce [n_frames, n_points, 2] array
+        self.keypoints_right = np.dstack(
+            [self.dlc_right[self.x_cols_r].to_numpy(), self.dlc_right[self.y_cols_r].to_numpy()]
+        )
 
-        self._fig_behavior_vids["right"].add_scatter(points, cmap="tab20", sizes=10, name="keypoints", alpha=alpha)
+        self.keypoints_alpha_right = self.dlc_right[self.lh_cols_r].to_numpy()
+
+        self._fig_behavior_vids["right"].add_scatter(
+            self.keypoints_right[0], cmap="tab20", sizes=10, name="keypoints", alpha=self.keypoints_alpha_right[0]
+        )
 
         self._block_reentrance = False
 
@@ -266,15 +271,6 @@ class OphysViz:
             raise IndexError(f"z index value out of bounds, valid range is: (0, {self._n_planes})")
 
         # make current contours invisible
-        for g in self.contours_graphics[self._z_index]:
-            g.visible = False
-
-        self._z_index = val
-
-        self._iw_calcium_vids.set_data(self._demixed_arrays[self._z_index])
-
-        for g in self.contours_graphics[self._z_index]:
-            g.visible = True
 
         # set heatmap for current plane
         new_c = self.demixed_data[self._z_index].c.T.cpu().numpy()
@@ -310,13 +306,9 @@ class OphysViz:
     def set_component_index(self, index: int, clear: bool = True):
         if clear:
             for i in range(len(self.demixing_display_selection)):
-                # make all contours low alpha and thin
-                self.contours_graphics[self.z_index][i].colors[:] = [1, 1, 1, 0.05]
-                self.contours_graphics[self.z_index][i].thickness[:] = 1
+                self.raster_masks[self.z_index][i].clear_highlights()
 
-                # set higher alpha and thickness of selected component
-                self.contours_graphics[self.z_index][i].graphics[index].colors = "w"
-                self.contours_graphics[self.z_index][i].graphics[index].thickness = 3.0
+                self.raster_masks[self.z_index][i].highlight(index, [1, 1, 1, 1])
 
             self._heatmap_comp_sel.selection = index
 
@@ -330,8 +322,7 @@ class OphysViz:
         else:
             # set higher alpha and thickness of selected component
             for i in range(len(self.demixing_display_selection)):
-                self.contours_graphics[self.z_index][i].graphics[index].colors = "r"
-                self.contours_graphics[self.z_index][i].graphics[index].thickness = 3.0
+                self.raster_masks[self.z_index][i].highlight(index, [1, 0, 0, 1])
 
             self.fig_selected_temporal[0, 0].add_line(self.iw_heatmap.managed_graphics[0].data[index], thickness=1, colors="r")
 
@@ -367,20 +358,12 @@ class OphysViz:
         self.fig_behavior_vids["right"]["image"].data = self.behavior_vid_r[behavior_right_index]
 
         # update keypoints
-        points = np.column_stack(
-            [self.dlc_left[self.x_cols_l].iloc[index].to_numpy(), self.dlc_left[self.y_cols_l].iloc[index].to_numpy()])
-        alpha = self.dlc_left[self.lh_cols_l].iloc[index].to_numpy()
+        self._fig_behavior_vids["left"]["keypoints"].data[:, :-1] = self.keypoints_left[behavior_left_index]
+        self._fig_behavior_vids["left"]["keypoints"].colors[:, -1] = self.keypoints_alpha_right[behavior_left_index]
 
-        self._fig_behavior_vids["left"]["keypoints"].data[:, :-1] = points
-        self._fig_behavior_vids["left"]["keypoints"].colors[:, -1] = alpha
 
-        points = np.column_stack(
-            [self.dlc_right[self.x_cols_r].iloc[index].to_numpy(),
-             self.dlc_right[self.y_cols_r].iloc[index].to_numpy()])
-        alpha = self.dlc_right[self.lh_cols_r].iloc[index].to_numpy()
-
-        self._fig_behavior_vids["right"]["keypoints"].data[:, :-1] = points
-        self._fig_behavior_vids["right"]["keypoints"].colors[:, -1] = alpha
+        self._fig_behavior_vids["right"]["keypoints"].data[:, :-1] = self.keypoints_right[behavior_right_index]
+        self._fig_behavior_vids["right"]["keypoints"].colors[:, -1] = self.keypoints_alpha_right[behavior_right_index]
 
         self._block_reentrance = False
 
@@ -394,9 +377,9 @@ class OphysViz:
         else:
             clear = True
 
-        click_point = ev.pick_info["index"]
+        col, row = ev.pick_info["index"]
 
-        index = np.argmin(np.linalg.norm(self._contours_coms[self.z_index] - click_point, ord=2, axis=1))
+        index = self.raster_masks[self.z_index][0].find_closest((row, col))
         self.set_component_index(index, clear=clear)
 
     def _component_index_changed(self, ev):
@@ -414,7 +397,7 @@ class OphysViz:
         for i, subplot in enumerate(self.fig_temporal_pixel):
              # array that corresponds to this plane and demixing array
             subplot["line"].data[:, 1] = self._demixed_arrays[self.z_index][i][:, row, col]
-            self._pixel_clicked_scatters[i].data = np.array([[col, row, 1]])
+            self._pixel_clicked_scatters[i].data = np.array([[col, row, 2]])
 
         for subplot in self.fig_temporal_pixel:
             subplot.auto_scale()
@@ -422,11 +405,11 @@ class OphysViz:
 
 if __name__ == "__main__":
     raw_vid_paths = [
-        f"/media/kushal/kushal_ssd/amol_data/SP044/2023-06-27/001/suite2p/plane{i}/imaging.frames_motionRegistered.bin" for i in range(7, 8)
+        f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane{i}/imaging.frames_motionRegistered.bin" for i in range(7, 8)
     ]
 
     demixed_paths = [
-        f"/media/kushal/kushal_ssd/amol_data/demixing_plane{i}.npz" for i in range(7, 8)
+        f"/home/kushal/amol_data/demixing_plane{i}.npz" for i in range(7, 8)
     ]
 
     viz = OphysViz(
