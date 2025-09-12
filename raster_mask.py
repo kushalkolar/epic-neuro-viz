@@ -1,26 +1,23 @@
 import cv2
 import numpy as np
-from pygments import highlight
+import torch
 from skimage.transform import rescale
 
 import fastplotlib as fpl
 
 
-class RasterMask(fpl.Graphic):
+class RasterMask:
     def __init__(
         self,
-        sparse_data,
+        sparse_data: torch.Tensor,
         dense_shape: tuple[int, int],
         outline: bool = True,
         scale: float = 1.0,
         alpha=0.05,
-        **kwargs,
     ):
         """
-        Create a RasterMask graphic
+        Create a RasterMask
         """
-        super().__init__(**kwargs)
-
         # apply the scaling
         dense_shape = tuple([int(d* scale) for d in dense_shape])
 
@@ -61,11 +58,15 @@ class RasterMask(fpl.Graphic):
         # an isolated buffer is created anyways so we don't need to make a copy
         self._original_texture_data = texture_data
 
-        self._image_graphic = fpl.ImageGraphic(texture_data, vmin=0, vmax=1)
+        self._image_graphic = fpl.ImageGraphic(texture_data, vmin=0, vmax=1, interpolation="linear")
 
         # super hacky to get the real reference to the world object instead of a weakref proxy, but it works
-        self._set_world_object(self._image_graphic.world_object.__repr__.__self__)
-        self.world_object.local.scale = (1 / scale)
+        # self._set_world_object(self._image_graphic.world_object.__repr__.__self__)
+        self.image_graphic.world_object.local.scale = (1 / scale)
+
+    @property
+    def image_graphic(self) -> fpl.ImageGraphic:
+        return self._image_graphic
 
     def highlight(self, comp_index, color):
         mask = self.sparse_data.T[comp_index].to_dense().cpu().numpy().reshape(512, 512) > 0.1

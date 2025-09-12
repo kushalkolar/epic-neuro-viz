@@ -1,13 +1,17 @@
 from collections import OrderedDict
+
+import cmap
 import math
 from pathlib import Path
 
 import numpy as np
 import fastplotlib as fpl
+import torch
 import zarr
 from tqdm import tqdm
 import cv2
 import pygfx
+import masknmf
 
 from raster_mask import RasterMask
 
@@ -62,6 +66,112 @@ def find_nearest_index(timepoints: np.ndarray, find_value: float):
         return round(idx - 1)
     else:
         return round(idx)
+
+
+class CalciumWidget:
+    # manages the
+    # TODO: Share buffer between all RasterMask ImageGraphics
+    def __init__(
+            self,
+            demixed_data: masknmf.DemixingResults,
+            display_selection: list[str],
+            contours_cmap: str = "tab10",
+    ):
+        self._demixed_data = demixed_data
+
+        self._image_widget = fpl.ImageWidget(
+            data=self._demixed_data,
+            cmap="viridis",
+            histogram_widget=False,
+            names=display_selection,
+            figure_kwargs={"size": (1000, 1200), "show_tooltips": True}
+        )
+        self.image_widget.figure.renderer.pixel_ratio = 1.0
+
+        # add raster mask, one for each demixed display option
+        self._raster_masks = list()
+
+        # Make one raster mask, and then just make ImageGraphic that share the TextureArray buffer!!
+        self._raster_mask = RasterMask(
+            sparse_data=self.demixed_data.a,
+            dense_shape=self.demixed_data.shape[1:],
+        )
+
+        # set the raster mask to be above the movie images
+        self._raster_mask.image_graphic.offset = (0, 0, 1)
+
+        for i, subplot in zip(range(len(display_selection)), self._image_widget.figure):
+            if i == 0:
+                # add the existing ImageGraphic
+                subplot.add_graphic(self._raster_mask.image_graphic)
+            else:
+                # create a new ImageGraphic using the existing TextureArray buffer
+                subplot.add_image(
+                    data=self._raster_mask.image_graphic.data,  # this will use the same data buffer
+                    vmin=self._raster_mask.image_graphic.vmin,
+                    vmax=self._raster_mask.image_graphic.vmax,
+                )
+
+        self._image_widget.show()
+
+        for subplot in self._image_widget.figure:
+            subplot.toolbar = False
+            subplot.axes.visible = False
+            subplot.camera.zoom = 1.2
+
+        self._contours_cmap = cmap.Colormap(contours_cmap)
+        self._contours_color_generator = self._contours_cmap.iter_colors()
+
+
+    @property
+    def demixed_data(self) -> masknmf.DemixingResults:
+        return self._demixed_data
+
+    @demixed_data.setter
+    def demixed_data(self, arrays: list[torch.Tensor]):
+        pass
+
+    @property
+    def image_widget(self) -> fpl.ImageWidget:
+        return self._image_widget
+
+    @property
+    def raster_mask(self) -> RasterMask:
+        return self._raster_mask
+
+    @property
+    def highlighted_components(self):
+        pass
+
+    @property
+    def contours_cmap(self) -> str:
+        return self._contours_cmap.name
+
+    @property
+    def contours_cmap(self, cmap_name: str):
+        try:
+            self._contours_cmap = cmap.Colormap(cmap_name)
+        except ValueError as e:
+            raise e from None
+
+        self.clear_component_selection()
+
+    def highlight_component(self, index: int):
+        """Add a component to the current selection of highlighted components"""
+        pass
+
+    def clear_component_selection(self):
+        self._contours_color_generator = self._contours_cmap.iter_colors()
+
+
+    def _tooltip_info(self, ev) -> str:
+        col, row = ev.pick_info["index"]
+        index = self.raster_mask.find_closest((row, col))
+
+        info = f"comp index: {index}"
+
+        # return this string to display it in the tooltip
+        return info
 
 
 class OphysViz:
