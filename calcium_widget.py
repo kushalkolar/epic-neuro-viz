@@ -52,7 +52,7 @@ def generate_contours_texture(
     centers = np.zeros(shape=(sparse_data.shape[1], 2), dtype=np.float32)
 
     for comp_index in tqdm(range(sparse_data.shape[1])):
-        mask = sparse_data.T[comp_index].to_dense().cpu().numpy().reshape(512, 512) > 0.1
+        mask = sparse_data.T[comp_index].to_dense().cpu().numpy().reshape(fov_shape) > 0.1
 
         center = np.argwhere(mask).mean(axis=0)
         centers[comp_index] = center
