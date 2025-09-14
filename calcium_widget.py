@@ -11,15 +11,7 @@ from tqdm import tqdm
 
 import masknmf
 
-
-DEMIXING_MAP = {
-    "ac": "ac_array",
-    "colors": "colorful_ac_array",
-    "fbg": "fluctuating_background_array",
-    "baseline": "baseline",
-    "pmd": "pmd_array",
-    "residuals": "residual_array",
-}
+from utils import DEMIXING_MAP
 
 
 def mask_to_contour_points(mask: np.ndarray, outline_mode) -> np.ndarray:
@@ -42,13 +34,22 @@ def mask_to_contour_points(mask: np.ndarray, outline_mode) -> np.ndarray:
 
 
 def generate_contours_texture(
-    sparse_data: torch.Tensor,
+    demixing_results: masknmf.DemixingResults,
     fov_shape: tuple[int, int],
     fill_contours: bool,
     alpha: float,
     outline_mode: str,
 ) -> tuple[np.ndarray, np.ndarray]:
+    sparse_data = demixing_results.a
     texture_data = np.zeros((*fov_shape, 4))
+
+    if hasattr(demixing_results, "contours") and hasattr(demixing_results, "contour_centers"):
+        for comp_index in range(sparse_data.shape[1]):
+            for p in demixing_results.contours[comp_index]:
+                texture_data[p[0], p[1]] += [1, 1, 1, alpha]
+
+        return texture_data, demixing_results.contour_centers
+
     centers = np.zeros(shape=(sparse_data.shape[1], 2), dtype=np.float32)
 
     for comp_index in tqdm(range(sparse_data.shape[1])):
@@ -109,16 +110,14 @@ class CalciumWidget:
 
         self._sparse_data = self._demixing_results.a
 
-        dense_shape = self._demixing_results.fov_shape
-
         self._contours_alpha = contours_alpha
         self._fill_contours = fill_contours
 
         self._outline_mode = outline_mode
 
         self._original_texture_data, self._contour_centers = generate_contours_texture(
-            sparse_data=self._sparse_data,
-            fov_shape=dense_shape,
+            demixing_results=self._demixing_results,
+            fov_shape=self._demixing_results.fov_shape,
             fill_contours=self._fill_contours,
             alpha=self._contours_alpha,
             outline_mode=outline_mode,
@@ -202,7 +201,7 @@ class CalciumWidget:
 
         # set texture data for image graphics that display the contours
         self._original_texture_data, self._contour_centers = generate_contours_texture(
-            sparse_data=self._sparse_data,
+            demixing_results=demixing_results,
             fov_shape=self.demixing_results.fov_shape,
             fill_contours=self._fill_contours,
             alpha=self._contours_alpha,
@@ -224,40 +223,10 @@ class CalciumWidget:
     def image_widget(self) -> fpl.ImageWidget:
         return self._image_widget
 
-    @property
-    def highlighted_components(self) -> tuple[int, ...]:
-        return tuple(self._highlighted_components)
-
-    @property
-    def contours_cmap(self) -> str:
-        return self._contours_cmap.name
-
-    @contours_cmap.setter
-    def contours_cmap(self, cmap_name: str):
-        try:
-            self._contours_cmap = cmap.Colormap(cmap_name)
-        except ValueError as e:
-            raise e from None
-
-        # reset the highlights
-        for index in self.highlighted_components:
-            self.highlight_component(index)
-
-    def highlight_component(self, index: int):
-        """Add a component to the current selection of highlighted components"""
+    def highlight_component(self, index: int, color):
+        """highlight a component using the given color"""
         # check if component is already highlighted
-        if index in self._highlighted_components:
-            return
-
-        mask = self._sparse_data.T[index].to_dense().cpu().numpy().reshape(self.demixing_results.fov_shape) > 0.1
-
-        try:
-            color = next(self._contours_color_generator)
-        except StopIteration:
-            raise StopIteration(
-                f"The current `contours_cmap`: '{self.contours_cmap}' does not have enough colors to highlight "
-                f"more components. Set a colormap that has more colors to highlight more components."
-            )
+        mask = self._sparse_data.T[index].to_dense().cpu().numpy().reshape(self.demixing_results.fov_shape) > 1e-6
 
         if self._fill_contours:
             self._image_widget.figure[0, 0]["contours"].data[mask] = color
@@ -267,14 +236,8 @@ class CalciumWidget:
             for p in points:
                 self._image_widget.figure[0, 0]["contours"].data[p[0], p[1]] = color
 
-        self._highlighted_components.append(index)
-
     def clear_component_selection(self):
         self._image_widget.figure[0, 0]["contours"].data = self._original_texture_data
-
-        # reset the colors generator
-        self._contours_color_generator = self._contours_cmap.iter_colors()
-        self._highlighted_components.clear()
 
     def find_closest_component(self, point: tuple[float, float]):
         """
@@ -313,8 +276,24 @@ if __name__ == "__main__":
         )
 
         demixed_path = f"/home/kushal/amol_data/demixing_plane{i}.npz"
-        demixing_results = np.load(demixed_path, allow_pickle=True)["results"][()]
+        demixing_results: masknmf.DemixingResults = np.load(demixed_path, allow_pickle=True)["results"][()]
         demixing_results.to("cuda")
+
+        sparse_data = demixing_results.a
+
+        contours = list()
+        centers = np.zeros((sparse_data.shape[1], 2), dtype=np.float32)
+
+        for comp_index in tqdm(range(sparse_data.shape[1])):
+            mask = sparse_data.T[comp_index].to_dense().cpu().numpy().reshape(demixing_results.fov_shape) > 0.1
+
+            center = np.argwhere(mask).mean(axis=0)
+            centers[comp_index] = center
+            points = mask_to_contour_points(mask, outline_mode="top")
+            contours.append(points)
+
+        demixing_results.contours = contours
+        demixing_results.contour_centers = centers
 
         raw_array_planes.append(raw_array)
         demixing_results_planes.append(demixing_results)
@@ -352,14 +331,13 @@ if __name__ == "__main__":
 
         def update(self):
             # slider for gaussian filter sigma value
-            changed, value = imgui.input_int(
-                label="z value",
+            changed, value = imgui.v_slider_int(
+                "z",
+                size=[20, 200],
                 v=self._value,
+                v_min=self._min,
+                v_max=self._max
             )
-            if not self._min <= value <= self._max:
-                # keep current value
-                changed = False
-
             if changed:
                 self._value = value
                 self._call_event_handlers(self._value)

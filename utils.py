@@ -8,6 +8,16 @@ import numpy as np
 from decord import VideoReader
 
 
+DEMIXING_MAP = {
+    "ac": "ac_array",
+    "colored": "colorful_ac_array",
+    "fbg": "fluctuating_background_array",
+    "baseline": "baseline",
+    "pmd": "pmd_array",
+    "residuals": "residual_array",
+}
+
+
 slice_or_int_or_range = Union[int, slice, range]
 
 
