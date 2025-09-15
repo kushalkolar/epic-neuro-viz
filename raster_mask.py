@@ -14,6 +14,7 @@ class RasterMask:
         outline: bool = True,
         scale: float = 1.0,
         alpha=0.05,
+        name: str = "raster-mask",
     ):
         """
         Create a RasterMask
@@ -58,7 +59,7 @@ class RasterMask:
         # an isolated buffer is created anyways so we don't need to make a copy
         self._original_texture_data = texture_data
 
-        self._image_graphic = fpl.ImageGraphic(texture_data, vmin=0, vmax=1, interpolation="linear")
+        self._image_graphic = fpl.ImageGraphic(texture_data, vmin=0, vmax=1, interpolation="linear", name=name)
 
         # super hacky to get the real reference to the world object instead of a weakref proxy, but it works
         # self._set_world_object(self._image_graphic.world_object.__repr__.__self__)

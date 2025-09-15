@@ -53,6 +53,7 @@ def generate_contours_texture(
     centers = np.zeros(shape=(sparse_data.shape[1], 2), dtype=np.float32)
 
     for comp_index in tqdm(range(sparse_data.shape[1])):
+        # TODO: keep this as a torch tensor to compute center, will b 10x faster
         mask = sparse_data.T[comp_index].to_dense().cpu().numpy().reshape(fov_shape) > 0.1
 
         center = np.argwhere(mask).mean(axis=0)
@@ -225,13 +226,11 @@ class CalciumWidget:
 
     def highlight_component(self, index: int, color):
         """highlight a component using the given color"""
-        # check if component is already highlighted
-        mask = self._sparse_data.T[index].to_dense().cpu().numpy().reshape(self.demixing_results.fov_shape) > 1e-6
-
         if self._fill_contours:
+            mask = self._sparse_data.T[index].to_dense().cpu().numpy().reshape(self.demixing_results.fov_shape) > 1e-6
             self._image_widget.figure[0, 0]["contours"].data[mask] = color
         else:
-            points = mask_to_contour_points(mask, outline_mode=self._outline_mode)
+            points = self._demixing_results.contours[index]
 
             for p in points:
                 self._image_widget.figure[0, 0]["contours"].data[p[0], p[1]] = color
@@ -239,18 +238,18 @@ class CalciumWidget:
     def clear_component_selection(self):
         self._image_widget.figure[0, 0]["contours"].data = self._original_texture_data
 
-    def find_closest_component(self, point: tuple[float, float]):
+    def find_closest_components(self, point: tuple[float, float]):
         """
 
         Args:
             point (float, float): [row, col] index of the point, NOT x, y coordinates
 
         Returns:
-
+            Indices of components from closest to farthest
         """
         # need to use nanargmin because some centers will be nan if the contour is degenerate
-        index = np.nanargmin(np.linalg.norm(self._contour_centers - point, ord=2, axis=1))
-        return index
+        indices = np.argsort(np.linalg.norm(self._contour_centers - point, ord=2, axis=1))
+        return indices
 
     def _tooltip_info(self, ev) -> str:
         col, row = ev.pick_info["index"]
@@ -308,7 +307,7 @@ if __name__ == "__main__":
 
     def image_clicked(ev: pygfx.PointerEvent):
         col, row = ev.pick_info["index"]
-        index = viz.find_closest_component((row, col))
+        index = viz.find_closest_components((row, col))
 
         if "Shift" in ev.modifiers:
             viz.highlight_component(index)
