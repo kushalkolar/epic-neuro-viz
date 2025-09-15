@@ -260,7 +260,7 @@ class OphysViz:
         self._fig_kinematics = fpl.Figure(shape=(2, 1), names=["left paw", "pupil-diameter"], size=(800, 500))
 
         line_paw = self._fig_kinematics["left paw"].add_line(
-            self.dlc_left["paw_l_x"].values,
+            self.dlc_left["paw_l_x"].values[::10],
             colors="r",
             uniform_color=True,
             thickness=1.1,
@@ -268,7 +268,7 @@ class OphysViz:
         self._selector_paw = line_paw.add_linear_selector()
 
         line_pupil = self._fig_kinematics["pupil-diameter"].add_line(
-            behavior_data_l["features"]["pupilDiameter_smooth"].values,
+            behavior_data_l["features"]["pupilDiameter_smooth"].values[::10],
             colors="purple",
             uniform_color=True,
             thickness=1.1,
@@ -432,8 +432,8 @@ class OphysViz:
         self._fig_behavior_vids["right"]["keypoints"].data[:, :-1] = self.keypoints_right[behavior_right_index]
         self._fig_behavior_vids["right"]["keypoints"].colors[:, -1] = self.keypoints_alpha_right[behavior_right_index]
 
-        self._selector_paw.selection = behavior_left_index
-        self._selector_pupil.selection = behavior_left_index
+        self._selector_paw.selection = behavior_left_index / 10
+        self._selector_pupil.selection = behavior_left_index / 10
 
         self._block_reentrance_calcium = False
 
@@ -443,7 +443,7 @@ class OphysViz:
 
         self._block_reentrance_behavior = True
 
-        behavior_index = ev.get_selected_index()
+        behavior_index = ev.get_selected_index() * 10
 
         time_from_left_behavior = self.behavior_vid_left_timings[behavior_index]
 

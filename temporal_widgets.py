@@ -205,7 +205,6 @@ class RawTemporalWidget:
 
     @data.setter
     def data(self, new_data: tuple[ArrayLike, masknmf.DemixingResults]):
-        self.clear()
         self._data = new_data
 
     @property
