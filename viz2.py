@@ -11,6 +11,7 @@ from fastplotlib.ui import EdgeWindow
 from imgui_bundle import imgui
 import masknmf
 import zarr
+from rastermap import Rastermap
 
 from calcium_widget import CalciumWidget, mask_to_contour_points
 from temporal_widgets import TemporalComponentWidget, RawTemporalWidget
@@ -69,10 +70,16 @@ class OphysViz:
 
         self._raw_array_planes: list[ArrayLike] = list()
         self._demixing_results_planes: list[masknmf.DemixingResults] = list()
+        self._isorts = list()
 
         for i in range(self._n_planes):
             demixed_path = demixing_paths[i]
             demixing_results: masknmf.DemixingResults = np.load(demixed_path, allow_pickle=True)["results"][()]
+
+            rastermap = Rastermap()
+            rastermap.fit(demixing_results.c.T.cpu().numpy())
+            self._isorts.append(rastermap.isort)
+
             demixing_results.to("cuda")
 
             shape = demixing_results.shape
@@ -281,6 +288,30 @@ class OphysViz:
         for sel in [self._selector_paw, self._selector_pupil]:
             sel.add_event_handler(self._behavior_time_changed, "selection")
 
+
+        self._heatmap_iw = fpl.ImageWidget(
+            self._demixing_results_planes[0].c.T.cpu().numpy()[self._isorts[0]],
+            names=["heatmap"],
+            histogram_widget=True,
+            figure_kwargs={"size": (800, 1400)}
+        )
+
+        # colorbar_clusters = self._heatmap_iw[0, 0].add_image(
+        #     np.column_stack([self._rastermap.embedding_clust[self._isorts[0]], self._rastermap.embedding_clust[self._isorts[0]]]),
+        #     cmap="jet",
+        #     offset=(-200, 0, 0),
+        # )
+        #
+        # colorbar_clusters.world_object.world.scale_x = 100
+
+        self._frame_selector_heatmap = self._heatmap_iw.managed_graphics[0].add_linear_selector()
+        self._frame_selector_heatmap.add_event_handler(self._calcium_time_changed, "selection")
+
+        # self._component_selector_heatmap = self._heatmap_iw.managed_graphics[0].add_linear_selector(axis="y")
+        # self._component_selector_heatmap.add_event_handler(self._heatmap_select_component, "selection")
+
+        self._heatmap_iw.show(maintain_aspect=False)
+
         self._block_reentrance_behavior: bool = False
         self._block_reentrance_calcium: bool = False
 
@@ -335,6 +366,11 @@ class OphysViz:
 
         self._last_extent[:] = extent
 
+    # def _heatmap_select_component(self, ev: fpl.GraphicFeatureEvent):
+    #     index = ev.get_selected_index()
+    #     self.clear_selection()
+    #     self.select_component(index)
+
     def select_component(self, index: int):
         # check if component is already selected
         if index in self._selected_components:
@@ -350,6 +386,8 @@ class OphysViz:
 
         self._calcium_widget.highlight_component(index, color)
         self._temporal_component_widget.add(index, color, autoscale=True)
+
+        # self._component_selector_heatmap.selection = index
 
         self._selected_components.append(index)
 
@@ -397,6 +435,14 @@ class OphysViz:
         self._temporal_component_widget.data = (raw_array, demixing_results)
         self._raw_temporal_widget.data = (raw_array, demixing_results)
 
+        self._heatmap_iw.set_data(self._demixing_results_planes[new_z].c.T.cpu().numpy()[self._isorts[new_z]])
+
+        with fpl.pause_events(self._frame_selector_heatmap):#, self._component_selector_heatmap):
+            self._frame_selector_heatmap.selection = 0
+            # self._component_selector_heatmap.selection = 0
+
+        self._heatmap_iw.figure[0, 0].auto_scale()
+
         self._selection_color_generator = self._selection_cmap.iter_colors()
 
     def _calcium_time_changed(self, ev: fpl.GraphicFeatureEvent | dict):
@@ -414,8 +460,13 @@ class OphysViz:
         self._calcium_widget.image_widget.current_index = {"t": index}
         self._temporal_component_widget.frame_index = index
         self._raw_temporal_widget.frame_index = index
+        self._frame_selector_heatmap.selection = index
 
         time_from_calcium = self._calcium_timings[index]
+
+        if index > 4500:
+            self._block_reentrance_calcium = False
+            return
 
         behavior_left_index = find_nearest_index(self.behavior_vid_left_timings, time_from_calcium)
         behavior_right_index = find_nearest_index(self.behavior_vid_right_timings, time_from_calcium)
@@ -434,6 +485,7 @@ class OphysViz:
 
         self._selector_paw.selection = behavior_left_index / 10
         self._selector_pupil.selection = behavior_left_index / 10
+
 
         self._block_reentrance_calcium = False
 

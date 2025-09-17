@@ -382,6 +382,27 @@ if __name__ == "__main__":
     for subplot_masknmf, subplot_s2p in zip(viz_masknmf.image_widget.figure, viz_s2p.image_widget.figure):
         subplot_masknmf.controller = subplot_s2p.controller
 
+    # from rastermap import Rastermap
+
+    # rmap_s2p = Rastermap().fit(c_suite2p.T.cpu().numpy())
+    # rmap_masknmf = Rastermap().fit(demixing_results.c.T.cpu().numpy())
+    #
+    # heatmap_iw_s2p = fpl.ImageWidget(
+    #     c_suite2p.T.cpu().numpy()[rmap_s2p.isort],
+    #     names=["Suite2p Rastermap"],
+    #     histogram_widget=True,
+    #     figure_kwargs={"size": (800, 1400)}
+    # )
+    # heatmap_iw_s2p.show(maintain_aspect=False)
+    #
+    # heatmap_masknmf = fpl.ImageWidget(
+    #     demixing_results.c.T.cpu().numpy()[rmap_masknmf.isort],
+    #     names=["masknmf Rastermap"],
+    #     histogram_widget=True,
+    #     figure_kwargs={"size": (800, 1400)}
+    # )
+    # heatmap_masknmf.show(maintain_aspect=False)
+
     def sync_time(ev: dict | fpl.GraphicFeatureEvent):
         if isinstance(ev, dict):
             index = ev["t"]
