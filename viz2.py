@@ -468,8 +468,8 @@ if __name__ == "__main__":
         raw_paths,
         demixing_paths,
         display_selection=display_selection,
-        temporal_lines_separation=1.0,
-        select_mode="auto",
+        temporal_lines_separation=None,
+        select_mode="manual",
     )
 
     fpl.loop.run()
