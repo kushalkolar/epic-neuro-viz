@@ -166,13 +166,15 @@ def make_masks_from_suite2p_statfile(stat: dict,
 
 
 if __name__ == "__main__":
+    folder = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/"
+    raw_path = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/imaging.frames_motionRegistered.bin"
     demixed_path = f"/home/kushal/amol_data/demixing_plane7.npz"
+
     demixing_results: masknmf.DemixingResults = np.load(demixed_path, allow_pickle=True)["results"][()]
     demixing_results.to("cuda")
 
     pmd_array = demixing_results.pmd_array
 
-    folder = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/"
     device = "cuda"
 
     is_cell = np.load(os.path.join(folder, "iscell.npy"))
@@ -259,7 +261,6 @@ if __name__ == "__main__":
         contours.append(points)
 
 
-    raw_path = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/imaging.frames_motionRegistered.bin"
     shape = (13585, 512, 512)
     raw_array = np.memmap(
         raw_path,
