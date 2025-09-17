@@ -1,4 +1,3 @@
-from collections import OrderedDict
 import math
 from pathlib import Path
 
@@ -111,39 +110,27 @@ class OphysViz:
         self._calcium_timings = np.load("/home/kushal/amol_data/SP044/2023-06-27/001/alf/FOV_07/mpci.times.npy")
 
         # make ImageWidget to display the calcium vids
-        # TODO: z index slider with imgui
-        self._iw_calcium_vids = fpl.ImageWidget(
-            data=self._demixed_arrays[0],
-            cmap="viridis",
-            histogram_widget=False,
-            names=self.demixing_display_selection,
-            figure_kwargs={"size": (1000, 1200), "show_tooltips": True}
-        )
-        self._iw_calcium_vids.figure.renderer.pixel_ratio = 1.0
 
-        # when image clicked, highlight nearest contour
-        for g in self._iw_calcium_vids.managed_graphics:
-            g.add_event_handler(self._image_clicked, "double_click")
-            self._iw_calcium_vids.figure.tooltip_manager.register(g, custom_info=self._tooltip_info)
 
-        # add raster mask, one for each demixed display option
-        self.raster_masks = [list() for i in range(self._n_planes)]
-        for z_index in range(self._n_planes):
-            for i, subplot in zip(range(len(self.demixing_display_selection)), self._iw_calcium_vids.figure):
-                rm = RasterMask(
-                    sparse_data=self.demixed_data[z_index].a,
-                    dense_shape=self.demixed_data[z_index].shape[1:],
-                    offset=(0, 0, 2)
-                )
-                subplot.add_graphic(rm)
-                self.raster_masks[z_index].append(rm)
 
-        self._iw_calcium_vids.show()
 
-        for subplot in self._iw_calcium_vids.figure:
-            subplot.toolbar = False
-            subplot.axes.visible = False
-            subplot.camera.zoom = 1.2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         self.iw_heatmap = fpl.ImageWidget(
             self.demixed_data[0].c.T.cpu().numpy(), cmap="viridis", names=["heatmap"], figure_kwargs={"size": (1000, 1200)}

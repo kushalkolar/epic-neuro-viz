@@ -1,0 +1,39 @@
+can add tracked points and corresponding behavioral traces
+
+can restrict traces to cells that are visible in the zoomed FOV
+
+there are 3 behavior vids, can add the 3rd (back view)
+
+moco trace maybe of interest for some datasets?
+
+would be good to show background
+
+add sliders to adjust contrast
+
+
+multiple options for sorting units (spatial, SNR, rastermap, etc)
+
+scroll through a_i images based on quality metrics (brightness, skewness, etc)
+
+show raw traces, denoised traces, deconved traces
+
+
+multi-select components
+
+qualitative metrics to color contours, sort heatmap using the metric too, colorbar legend on side
+
+
+----------------------------------------------------------
+
+can add tracked points and corresponding behavioral traces
+
+can restrict traces to cells that are visible in the zoomed FOV
+
+look at rastermap
+
+Just to demo use a dummy SNR metric
+
+add subplots to temporal widget figure to show area bounded by spatial contour in
+raw, pmd, residuals, etc (whatever is displayed in the calcium movie)
+
+only single pixel raw clicks, don't require multiple single pixel plots

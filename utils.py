@@ -1,11 +1,106 @@
+from abc import ABC, abstractmethod
 from typing import *
 from pathlib import Path
 from warnings import warn
-from abc import ABC, abstractmethod
+import math
 
 import numpy as np
 
 from decord import VideoReader
+
+
+DEMIXING_MAP = {
+    "ac": "ac_array",
+    "colored": "colorful_ac_array",
+    "fbg": "fluctuating_background_array",
+    "baseline": "baseline",
+    "pmd": "pmd_array",
+    "residuals": "residual_array",
+}
+
+
+def find_nearest_index(timepoints: np.ndarray, find_value: float):
+    # find the index of the data closest to given timepoint
+
+    # get closest data index to the world space position of the selector
+    idx = np.searchsorted(timepoints, find_value, side="left")
+
+    # bisection algo is the fastest way to do this
+    # math.fabs is faster than numpy abs for this usecase
+    if idx > 0 and (
+            idx == len(timepoints)
+            or math.fabs(find_value - timepoints[idx - 1])
+            < math.fabs(find_value - timepoints[idx])
+    ):
+        return round(idx - 1)
+    else:
+        return round(idx)
+
+
+# from fastplotlib axes update code
+def get_extent(subplot) -> tuple[float, float, float, float] | None:
+    """Returns the extent of the subplot in world space, [xmin, xmax, ymin, ymax]"""
+    xpos, ypos, width, height = subplot.viewport.rect
+    # orthographic projection, get ranges using inverse
+
+    # get range of screen space by getting the corners
+    xmin, xmax = xpos, xpos + width
+    ymin, ymax = ypos + height, ypos
+
+    min_vals = subplot.map_screen_to_world((xmin, ymin))
+    max_vals = subplot.map_screen_to_world((xmax, ymax))
+
+    if min_vals is None or max_vals is None:
+        return
+
+    world_xmin, world_ymin, _ = min_vals
+    world_xmax, world_ymax, _ = max_vals
+
+    return (world_xmin, world_xmax, world_ymin, world_ymax)
+
+
+# From mask nmf
+def pixel_crop_stack(array, p1, p2):
+    if array.shape[0] == 1:
+        raise ValueError("Need more than 1 frame in data")
+    if np.amin(p1) == np.amax(p1):
+        term1 = slice(np.amin(p1), np.amin(p1) + 1)
+        dim1_flag = True
+    else:
+        term1 = slice(np.amin(p1), np.amax(p1) + 1)
+        dim1_flag = False
+
+    if np.amin(p2) == np.amax(p2):
+        term2 = slice(np.amin(p2), np.amin(p2) + 1)
+        dim2_flag = True
+    else:
+        term2 = slice(np.amin(p2), np.amax(p2) + 1)
+        dim2_flag = False
+
+    selected_pixels = array[:, term1, term2].squeeze()
+
+    if dim1_flag and dim2_flag:
+        data_2d = selected_pixels[:, None]
+    elif dim1_flag and not dim2_flag:
+        data_2d = selected_pixels[:, None, p2 - np.amin(p2)]
+    elif not dim1_flag and dim2_flag:
+        data_2d = selected_pixels[:, p1 - np.amin(p1), None]
+    else:
+        data_2d = selected_pixels[:, p1 - np.amin(p1), p2 - np.amin(p2)]
+    return data_2d
+
+# From mask nmf
+# For every signal, need to look at the temporal trace and the PMD average, superimposed
+def get_roi_avg(array, p1, p2, normalize=True):
+    """
+    Given nonzero dim1 and dim2 indices p1 and p2, get the ROI average
+    """
+    data_2d = pixel_crop_stack(array, p1, p2)
+    avg_trace = np.mean(data_2d, axis=1)
+    if normalize:
+        return avg_trace / np.amax(avg_trace)
+    else:
+        return avg_trace
 
 
 slice_or_int_or_range = Union[int, slice, range]
