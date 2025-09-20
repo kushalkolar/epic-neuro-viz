@@ -5,17 +5,19 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 
-class DataModel:
-    event_types = {
+EVENT_TYPES = {
         "select_component",
         "clear_selection",
         "selection_cmap",
         "frame_index",
         "time_index",
         "labels_cmap",
-        "displayed_label",
+        "active_label",
+        "set_data",
     }
 
+
+class DataModel:
     def __init__(
             self,
             movie,
@@ -23,11 +25,14 @@ class DataModel:
             contour_centers,
             traces,
             selection_cmap,
+            fov_shape: tuple[int, int] | tuple[int, int, int],  # TODO: decide how to deal with 3D
+            n_timepoints: int,
+            name: str,
             selected_components: list[int] = None,
             time_index: float = 0.0,
             frame_index: int = 0,
             component_labels: dict[str, np.ndarray] = None,
-            displayed_label: str = None,
+            active_label: str = None,
             labels_cmap: str = "spring",
     ):
         self._movie = movie
@@ -35,6 +40,10 @@ class DataModel:
         self._contour_centers = contour_centers
         self._traces = traces
         self._selection_cmap = cmap.Colormap(selection_cmap)
+        self._name = name
+
+        self._n_timepoints = n_timepoints
+        self._fov_shape = fov_shape
 
         if selected_components is None:
             selected_components = list()
@@ -45,9 +54,69 @@ class DataModel:
         self._time_index = time_index
         self._frame_index = frame_index
         self._component_labels = component_labels
-        self._displayed_label = None
+        self._active_label = None
 
-        self._event_handlers = dict[str, list] = {et: list() for et in self.event_types}
+        self._event_handlers = dict[str, list] = {et: list() for et in EVENT_TYPES}
+        self._re_entrance_block = dict[str, bool] = {et: False for et in EVENT_TYPES}
+
+        self._selection_cmap_cycler = self._selection_cmap.iter_colors()
+        self._selection_color: cmap.Color | None = None
+
+    def set_data(
+            self,
+            movie,
+            contours,
+            contour_centers,
+            traces,
+            fov_shape: tuple[int, ...],
+            n_timepoints: int,
+            component_labels: dict[str, np.ndarray],
+            active_label: str = None,
+            time_index: float = None,
+            frame_index: float = None,
+    ):
+        """set new data, example: different plane, different session"""
+        self.clear_selection()
+
+        # block all events
+        for event_type in EVENT_TYPES:
+            if event_type == "set_data":
+                continue
+            self._re_entrance_block[event_type] = True
+
+        try:
+            self._movie = movie
+            self._contours = contours
+            self._contour_centers = contour_centers
+            self._traces = traces
+            self._n_timepoints = n_timepoints
+            self._component_labels = component_labels
+            self._active_label = active_label
+
+            if frame_index is not None:
+                if frame_index > self._n_timepoints:
+                    self._frame_index = self._n_timepoints - 1
+                else:
+                    self._frame_index = frame_index
+        except Exception as e:
+            raise e from None
+        finally:
+            for event_type in EVENT_TYPES:
+                if event_type == "set_data":
+                    continue
+                self._re_entrance_block[event_type] = False
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def fov_shape(self) -> tuple[int, int] | tuple[int, int, int]:
+        return self._fov_shape
+
+    @property
+    def n_timepoints(self) -> int:
+        return self._n_timepoints
 
     @property
     def movie(self) -> ArrayLike:
@@ -75,6 +144,10 @@ class DataModel:
         self._call_event_handlers("selection_cmap", cmap_name)
 
     @property
+    def selection_color(self) -> cmap.Color | None:
+        return self._selection_color
+
+    @property
     def selected_components(self) -> tuple[int, ...]:
         return tuple(self._selected_components)
 
@@ -92,26 +165,33 @@ class DataModel:
         return self._frame_index
 
     @frame_index.setter
-    def frame_index(self, index: float):
+    def frame_index(self, index: int):
         self._frame_index = index
         self._call_event_handlers("frame_index", index)
+
+    @property
+    def timings(self) -> np.ndarray:
+        """
+        array where each index is the time at which the data was captured by the instrument
+        """
+        pass
 
     @property
     def component_labels(self) -> dict[str, np.ndarray]:
         return self._component_labels
 
     @property
-    def displayed_label(self) -> str | None:
-        return self._displayed_label
+    def active_label(self) -> str | None:
+        return self._active_label
 
-    @displayed_label.setter
-    def displayed_label(self, label_name: str):
+    @active_label.setter
+    def active_label(self, label_name: str):
         if label_name not in self.component_labels.keys():
             raise KeyError
 
-        self._displayed_label = label_name
+        self._active_label = label_name
 
-        self._call_event_handlers("displayed_label", label_name)
+        self._call_event_handlers("active_label", label_name)
 
     @property
     def labels_cmap(self) -> str:
@@ -119,20 +199,40 @@ class DataModel:
 
     def select_component(self, index: int):
         self._selected_components.append(index)
+
+        # iter color cycler
+        self._selection_color = next(self._selection_cmap_cycler)
+
         self._call_event_handlers("select_component", index)
 
     def clear_selection(self):
         self._selected_components.clear()
+
+        # reset color cycler
+        self._selection_color = None
+        self._selection_cmap_cycler = self._selection_cmap.iter_colors()
+
         self._call_event_handlers("clear_selection", None)
 
     def _call_event_handlers(self, event_type: str, value: Any):
-        handlers = self._event_handlers[event_type]
+        if self._re_entrance_block[event_type]:
+            # force function to be non-reentrant
+            return
 
-        for handler in handlers:
-            handler(value)
+        self._re_entrance_block[event_type] = True
+
+        try:
+            handlers = self._event_handlers[event_type]
+
+            for handler in handlers:
+                handler(value)
+        except Exception as e:
+            raise e from None
+        finally:
+            self._re_entrance_block[event_type] = False
 
     def add_event_handler(self, handler, event_type):
-        if event_type not in self.event_types:
+        if event_type not in EVENT_TYPES:
             raise KeyError
 
         if not callable(handler):
@@ -140,7 +240,7 @@ class DataModel:
 
         self._event_handlers[event_type].append(handler)
 
-    def find_closest_components(self, point: tuple[float, float]) -> np.ndarray:
+    def find_closest_components(self, point: tuple[float, float]) -> np.ndarray[int, ...]:
         """
 
         Args:
