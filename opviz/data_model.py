@@ -1,3 +1,4 @@
+from inspect import getfullargspec
 from typing import Any
 
 import cmap
@@ -15,7 +16,7 @@ EVENT_TYPES = {
         "active_label",
         "set_data",
     }
-
+# TODO: pixel selection
 
 class DataModel:
     def __init__(
@@ -24,11 +25,11 @@ class DataModel:
             contours,
             contour_centers,
             traces,
-            selection_cmap,
             fov_shape: tuple[int, int] | tuple[int, int, int],  # TODO: decide how to deal with 3D
             n_timepoints: int,
             name: str,
             selected_components: list[int] = None,
+            selection_cmap: str = "tab10",
             time_index: float = 0.0,
             frame_index: int = 0,
             component_labels: dict[str, np.ndarray] = None,
@@ -56,8 +57,8 @@ class DataModel:
         self._component_labels = component_labels
         self._active_label = None
 
-        self._event_handlers = dict[str, list] = {et: list() for et in EVENT_TYPES}
-        self._re_entrance_block = dict[str, bool] = {et: False for et in EVENT_TYPES}
+        self._event_handlers: dict[str, list] = {et: list() for et in EVENT_TYPES}
+        self._re_entrance_block: dict[str, bool] = {et: False for et in EVENT_TYPES}
 
         self._selection_cmap_cycler = self._selection_cmap.iter_colors()
         self._selection_color: cmap.Color | None = None
