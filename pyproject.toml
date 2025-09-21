@@ -1,0 +1,88 @@
+# ===== Project info
+
+[project]
+dynamic = ["version"]
+name = "opviz"
+description = "Next-gen Visualization System for Optical Physiology"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Kushal Kolar" }, { name = "Amol Pasarkar" }]
+
+keywords = [
+    "visualization",
+    "science",
+    "interactive",
+    "neuroscience",
+    "calcium imaging",
+    "optical physiology",
+    "pygfx",
+    "webgpu",
+    "wgpu",
+    "vulkan",
+    "gpu",
+]
+
+requires-python = ">= 3.11"
+dependencies = [
+    "numpy>=1.23.0",
+    "fastplotlib[imgui]==0.5.2",
+    "joblib",
+    "masknmf",
+    # (this comment keeps this list multiline in VSCode)
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx",
+    "sphinx-gallery",
+    "pydata-sphinx-theme",
+    "glfw",
+    "ipywidgets>=8.0.0,<9",
+    "sphinx-copybutton",
+    "sphinx-design",
+    "pandoc",
+    "imageio[ffmpeg]",
+    "matplotlib",
+]
+notebook = [
+    "jupyterlab",
+    "jupyter-rfb>=0.5.1",
+    "ipywidgets>=8.0.0,<9",
+    "sidecar",
+]
+tests = [
+    "pytest",
+    "nbmake",
+    "black",
+    "scipy",
+    "imageio[ffmpeg]",
+    "scikit-learn",
+    "tqdm",
+]
+
+dev = ["fastplotlib[docs,notebook,tests]"]
+
+[project.urls]
+Homepage = ""
+Documentation = ""
+Repository = ""
+
+# ===== Building
+
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+# ===== Tooling
+
+# [tool.ruff]
+# line-length = 88
+
+# [tool.ruff.lint]
+# select = ["F", "E", "W", "N", "B", "RUF", "TC"]
+# ignore = [
+#     "E501",   # Line too long
+#     "E731",   # Do not assign a `lambda` expression, use a `def`
+#     "B019",   # Use of `functools.lru_cache` or `functools.cache` on methods can lead to memory leaks
+#     "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`"
+# ]
