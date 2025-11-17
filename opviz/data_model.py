@@ -1,4 +1,3 @@
-from inspect import getfullargspec
 from typing import Any
 
 import cmap
@@ -18,7 +17,7 @@ EVENT_TYPES = {
     }
 # TODO: pixel selection
 
-class DataModel:
+class OphysModel:
     def __init__(
             self,
             movie,
@@ -241,7 +240,7 @@ class DataModel:
 
         self._event_handlers[event_type].append(handler)
 
-    def find_closest_components(self, point: tuple[float, float]) -> np.ndarray[int, ...]:
+    def find_closest_components(self, point: tuple[float, float]) -> np.ndarray[int]:
         """
 
         Args:
@@ -253,3 +252,25 @@ class DataModel:
         # need to use nanargmin because some centers will be nan if the contour is degenerate
         indices = np.argsort(np.linalg.norm(self.contour_centers - point, ord=2, axis=1))
         return indices
+
+
+class BehaviorDataModel:
+    @property
+    def movie(self):
+        pass
+
+    @property
+    def keypoints(self):
+        pass
+
+    @property
+    def frame_index(self):
+        pass
+
+    @property
+    def time_index(self):
+        pass
+
+    @property
+    def kinematics(self):
+        pass

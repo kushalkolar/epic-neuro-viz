@@ -4,7 +4,7 @@ import numpy as np
 import fastplotlib as fpl
 import pygfx
 
-from ..data_model import DataModel
+from ..data_model import OphysModel
 from ._base import ModelView
 
 
@@ -26,7 +26,7 @@ def texture_from_contours(
 class MovieWidget(ModelView):
     def __init__(
             self,
-            data_models: list[DataModel],
+            data_models: list[OphysModel],
             sync_time: bool,
             sync_selection: bool,
     ):
@@ -65,7 +65,7 @@ class MovieWidget(ModelView):
                 vmin=0,  # makes it easier to set the colors of the contour highlights using vals between 0 - 1
                 vmax=1,
                 name="contours",
-                offset=(0, 0, 1),  # make sure it's above the calcium video image
+                offset=(0, 0, -0.1),  # make sure it's above the calcium video image
             )
 
             self._image_widget.figure[self._data_models[0].name].add_graphic(image_graphic_1)
@@ -80,7 +80,7 @@ class MovieWidget(ModelView):
                     vmin=0,
                     vmax=1,
                     name="contours",
-                    offset=(0, 0, 1)
+                    offset=(0, 0, -0.1)
                 )
 
         else:
@@ -95,14 +95,15 @@ class MovieWidget(ModelView):
 
                 self._original_contours_textures.append(texture)
 
-        for dm_index, g in enumerate(self._image_widget.managed_graphics):
-            g.add_event_handler(
-                partial(self._image_clicked, dm_index), "double_click"
-            )
+        for i, dm in enumerate(self._data_models):
+            if "contours" in self.figure[dm.name]:
+                self.figure[dm.name]["contours"].add_event_handler(
+                    partial(self._image_clicked, i), "double_click"
+                )
 
         # TODO: decide how to do with when time isn't synced
         if self._sync_time:
-            self._image_widget.add_event_handler(self._iw_current_index_changed, "current_index")
+            self._image_widget.add_event_handler(self._iw_current_index_changed, "indices")
 
         self._block_select_component_handler = False
         self._block_clear_selection_handler = False
@@ -121,10 +122,10 @@ class MovieWidget(ModelView):
         )
 
     def _frame_index_changed(self, dm_index, index):
-        if self._image_widget.current_index["t"] == index:
+        if self._image_widget.indices["t"] == index:
             return
 
-        self._image_widget.current_index = {"t": index}
+        self._image_widget.indices["t"] = index
 
     def _time_index_changed(self):
         pass

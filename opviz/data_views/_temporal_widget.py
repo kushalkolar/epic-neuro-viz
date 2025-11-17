@@ -2,13 +2,13 @@ from functools import partial
 
 import fastplotlib as fpl
 
-from ..data_model import DataModel
+from ..data_model import OphysModel
 from ._base import ModelView
 
 class TemporalWidget(ModelView):
     def __init__(
             self,
-            data_models: list[DataModel],
+            data_models: list[OphysModel],
             sync_time: bool,
             sync_selection: bool,  # TODO: add alpha property for semi-transparent lines
             separation: float | None = None,
@@ -39,7 +39,6 @@ class TemporalWidget(ModelView):
                 selection=0,
                 limits=(0, dm.n_timepoints - 1),
                 name="index-selector",
-                offset=(0, 0, 100),
             )
 
             subplot.add_graphic(linear_selector)
@@ -95,7 +94,7 @@ class TemporalWidget(ModelView):
         for g in self.figure[dm.name].graphics:
             self.figure[dm.name].delete_graphic(g)
 
-    def _linear_selector_handler(self, data_model: DataModel, ev: fpl.GraphicFeatureEvent):
+    def _linear_selector_handler(self, data_model: OphysModel, ev: fpl.GraphicFeatureEvent):
         index = int(ev.info["value"])
 
         if self._sync_time:
