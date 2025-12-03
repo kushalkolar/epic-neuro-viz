@@ -1,11 +1,10 @@
-
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
 import fastplotlib as fpl
 import masknmf
 
-from opviz import DataModel, MovieWidget, TemporalWidget
+from opviz import OphysModel, MovieWidget, TemporalWidget
 from opviz.utils import mask_to_contour_points, get_roi_avg
 
 # Open data
@@ -22,6 +21,7 @@ raw_array = np.memmap(
     mode="r",
     shape=shape,
 )
+print(shape)
 
 sparse_data = demixing_results.a
 
@@ -50,7 +50,7 @@ traces_raw = np.vstack(
 )
 
 ## Create data models
-raw_model = DataModel(
+raw_model = OphysModel(
     movie=raw_array,
     contours=contours,
     contour_centers=centers,
@@ -61,7 +61,7 @@ raw_model = DataModel(
 )
 
 demixing_array_names = [
-    "pmd_array",
+    # "pmd_array",
     "ac_array",
     "residual_array",
     "fluctuating_background_array",
@@ -72,6 +72,7 @@ demixing_results_models = list()
 for name in demixing_array_names:
     movie = getattr(demixing_results, name)
 
+    print(f"getting traces for: {name}")
     if name == "ac_array":
         traces = demixing_results.c.T.cpu().numpy()
     else:
@@ -81,7 +82,7 @@ for name in demixing_array_names:
             traces[i] = get_roi_avg(movie, ixs[:, 0], ixs[:, 1])
 
     # create data model for this demixing result array
-    dm = DataModel(
+    dm = OphysModel(
         movie=movie,
         contours=contours,
         contour_centers=centers,

@@ -2,13 +2,13 @@ from functools import partial
 
 import fastplotlib as fpl
 
-from ..data_model import DataModel, EVENT_TYPES
+from ..data_model import OphysModel, EVENT_TYPES
 
 
 class ModelView:
     def __init__(
             self,
-            data_models: list[DataModel],
+            data_models: list[OphysModel],
             sync_time: bool,
             sync_selection: bool,
     ):

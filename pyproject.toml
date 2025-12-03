@@ -1,7 +1,8 @@
 # ===== Project info
 
 [project]
-dynamic = ["version"]
+#dynamic = ["version"]
+version = "0.0.0"
 name = "opviz"
 description = "Next-gen Visualization System for Optical Physiology"
 readme = "README.md"
@@ -25,9 +26,9 @@ keywords = [
 requires-python = ">= 3.11"
 dependencies = [
     "numpy>=1.23.0",
-    "fastplotlib[imgui]==0.5.2",
+    "fastplotlib[imgui]>=0.6.0",
     "joblib",
-    "masknmf",
+#    "masknmf",
     # (this comment keeps this list multiline in VSCode)
 ]
 
