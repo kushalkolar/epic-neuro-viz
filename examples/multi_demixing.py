@@ -1,27 +1,26 @@
-
 import numpy as np
 from tqdm import tqdm
-from joblib import Parallel, delayed
 import fastplotlib as fpl
 import masknmf
 
-from opviz import DataModel, MovieWidget, TemporalWidget
+from opviz import OphysModel, MovieWidget, TemporalWidget
 from opviz.utils import mask_to_contour_points, get_roi_avg
 
 # Open data
-raw_path = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/imaging.frames_motionRegistered.bin"
-demixing_path = f"/home/kushal/amol_data/demixing_plane7.npz"
+# raw_path = f"/home/kushal/amol_data/SP044/2023-06-27/001/suite2p/plane7/imaging.frames_motionRegistered.bin"
+demixing_path = f"/home/kushal/data/ibl/2024_07_18_demix.hdf5"
 
-demixing_results: masknmf.DemixingResults = np.load(demixing_path, allow_pickle=True)["results"][()]
+
+demixing_results: masknmf.DemixingResults = masknmf.DemixingResults.from_hdf5(demixing_path)
 demixing_results.to("cuda")
 
 shape = demixing_results.shape
-raw_array = np.memmap(
-    raw_path,
-    dtype=np.int16,
-    mode="r",
-    shape=shape,
-)
+# raw_array = np.memmap(
+#     raw_path,
+#     dtype=np.int16,
+#     mode="r",
+#     shape=shape,
+# )
 
 sparse_data = demixing_results.a
 
@@ -43,22 +42,22 @@ for comp_index in tqdm(range(sparse_data.shape[1])):
     masks_argwhere.append(ixs)
 
 
-traces_raw = np.vstack(
-    Parallel(n_jobs=20)(
-        delayed(get_roi_avg)(raw_array, ixs[:, 0], ixs[:, 1]) for ixs in masks_argwhere
-    )
-)
+# traces_raw = np.vstack(
+#     Parallel(n_jobs=20)(
+#         delayed(get_roi_avg)(raw_array, ixs[:, 0], ixs[:, 1]) for ixs in masks_argwhere
+#     )
+# )
 
 ## Create data models
-raw_model = DataModel(
-    movie=raw_array,
-    contours=contours,
-    contour_centers=centers,
-    traces=traces_raw,
-    fov_shape=demixing_results.fov_shape,
-    n_timepoints=demixing_results.shape[0],
-    name="raw",
-)
+# raw_model = DataModel(
+#     movie=raw_array,
+#     contours=contours,
+#     contour_centers=centers,
+#     traces=traces_raw,
+#     fov_shape=demixing_results.fov_shape,
+#     n_timepoints=demixing_results.shape[0],
+#     name="raw",
+# )
 
 demixing_array_names = [
     "pmd_array",
@@ -81,7 +80,7 @@ for name in demixing_array_names:
             traces[i] = get_roi_avg(movie, ixs[:, 0], ixs[:, 1])
 
     # create data model for this demixing result array
-    dm = DataModel(
+    dm = OphysModel(
         movie=movie,
         contours=contours,
         contour_centers=centers,
@@ -96,9 +95,9 @@ for name in demixing_array_names:
 # common kwargs for creating all widgets
 # basically just give them the data models objects!
 model_view_kwargs = dict(
-    data_models=[raw_model, *demixing_results_models],
+    data_models=[*demixing_results_models],
     sync_selection=True,
-    sync_time=True
+    sync_time=False
 )
 
 # create the widgets

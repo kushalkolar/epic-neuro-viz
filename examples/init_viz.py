@@ -92,7 +92,7 @@ class InitViz:
 
     def _run_mad(self, threshold: float):
         # new signal demixer
-        self._signal_demixer = masknmf.demixing.signal_demixer.SignalDemixer(
+        self._signal_demixer = masknmf.SignalDemixer(
             self._pmd_movie,
             device=device,
             frame_batch_size=frame_batch_size,
