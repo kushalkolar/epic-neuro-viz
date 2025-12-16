@@ -31,7 +31,9 @@ pmd_result = masknmf.compression.pmd_decomposition(
     frame_batch_size=1024
 )
 
-frame_batch_size = 1024
+# pmd_result = masknmf.PMDArray.from_hdf5("/home/kushal/repos/epic-mcorr-viz/2024_07_19_compress.hdf5")
+
+frame_batch_size = 64
 spatial_hp_sigma = 4
 
 spatial_filt_pmd = masknmf.demixing.filters.spatial_filter_pmd(
@@ -53,10 +55,18 @@ class InitUI(EdgeWindow):
         self._update_mad_handler = update_mad_handler
         self._update_nmf_preview_handler = update_nmf_preview_handler
 
+        self._instant_update = True
+
     def update(self):
-        _, self._mad_correlation_threshold = imgui.slider_float(
-            label="mad corr thres", v_min=0.0, v_max=1.0, v=self._mad_correlation_threshold,
+        changed, self._mad_correlation_threshold = imgui.slider_float(
+            label="mad corr thres", v_min=0.0, v_max=0.999, v=self._mad_correlation_threshold,
         )
+
+        _, self._instant_update = imgui.checkbox("instant update", self._instant_update)
+
+        if changed and self._instant_update:
+            self._update_mad_handler(self._mad_correlation_threshold)
+            self._update_nmf_preview_handler()
 
         if imgui.button("Update MAD thres"):
             self._update_mad_handler(self._mad_correlation_threshold)
@@ -74,11 +84,13 @@ class InitViz:
             figure_kwargs={"size": (1000, 1000)},
         )
 
-        self._temporal_widget: TemporalWidget = None
-
         self._pmd_movie = None
         self._signal_demixer: masknmf.SignalDemixer = None
         self._init_results: masknmf.InitializationResults = None
+
+        self._demix_widget: MovieWidget = None
+        self._temporal_widget: TemporalWidget = None
+
 
     @property
     def pmd_movie(self) -> masknmf.PMDArray | None:
@@ -87,6 +99,8 @@ class InitViz:
     @pmd_movie.setter
     def pmd_movie(self, new_movie: masknmf.PMDArray):
         self._pmd_movie = new_movie
+
+        self._signal_demixer = None
 
         self._image_widget.data["pmd"] = self._pmd_movie
 
@@ -119,8 +133,10 @@ class InitViz:
         if "init_pixels" in self._image_widget.figure["corr"]:
             self._image_widget.figure["corr"].delete_graphic(self._image_widget.figure["corr"]["init_pixels"])
 
+        y, x = np.where(self._init_results.pure_nmf_seed_map)
+
         self._image_widget.figure["corr"].add_scatter(
-            np.column_stack(np.where(self._init_results.pure_nmf_seed_map)),
+            np.column_stack([x, y]),
             colors="r",
             markers="s",
             sizes=1.0,
@@ -149,10 +165,10 @@ class InitViz:
         }
 
         with torch.no_grad():
-            self._signal_demixer.demix(**localnmf_params)
+            results = self._signal_demixer.state.preview_demix()
 
-        res = self._signal_demixer.results.resid_corr_img_normalizer.reshape(170, 170).numpy()
-        max_image = self._signal_demixer.results.a.to_dense().max(axis=1).values.reshape(170, 170).numpy()
+        res = results.resid_corr_img_normalizer.reshape(170, 170).numpy()
+        max_image = results.a.to_dense().max(axis=1).values.reshape(170, 170).numpy()
         mask = max_image.copy()
         mask[mask > 0] = 1
 

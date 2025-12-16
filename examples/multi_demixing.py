@@ -60,7 +60,7 @@ for comp_index in tqdm(range(sparse_data.shape[1])):
 # )
 
 demixing_array_names = [
-    "pmd_array",
+    # "pmd_array",
     "ac_array",
     "residual_array",
     "fluctuating_background_array",
@@ -71,6 +71,7 @@ demixing_results_models = list()
 for name in demixing_array_names:
     movie = getattr(demixing_results, name)
 
+    print(f"getting traces for: {name}")
     if name == "ac_array":
         traces = demixing_results.c.T.cpu().numpy()
     else:
