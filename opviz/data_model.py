@@ -17,7 +17,12 @@ EVENT_TYPES = {
     }
 # TODO: pixel selection
 
-class OphysModel:
+
+class Model:
+    pass
+
+
+class OphysModel(Model):
     def __init__(
             self,
             movie,
@@ -105,6 +110,7 @@ class OphysModel:
                 if event_type == "set_data":
                     continue
                 self._re_entrance_block[event_type] = False
+            self._call_event_handlers("set_data", None)
 
     @property
     def name(self) -> str:
@@ -254,7 +260,7 @@ class OphysModel:
         return indices
 
 
-class BehaviorDataModel:
+class BehaviorDataModel(Model):
     @property
     def movie(self):
         pass

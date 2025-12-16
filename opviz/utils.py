@@ -14,7 +14,11 @@ def mask_to_contour_points(mask: np.ndarray, outline_mode) -> np.ndarray:
             points = []
         else:
             biggest_ix = np.argmax(sizes)
-            points = np.fliplr(contours[biggest_ix].squeeze())
+            contour_biggest = contours[biggest_ix].squeeze()
+            if contour_biggest.ndim < 2: # single point
+                # force to be 2d
+                contour_biggest = contour_biggest[None]
+            points = np.fliplr(contour_biggest)
     else:
         raise ValueError("`outline_mode` must be one of: 'top' | 'all'")
 

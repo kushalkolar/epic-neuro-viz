@@ -51,16 +51,40 @@ class MovieWidget(ModelView):
         for subplot in self.figure:
             subplot.toolbar = False
 
-        if sync_selection:
-            self._original_contours_textures = None
-            self._original_contours_texture = texture_from_contours(
+        self._create_contours()
+
+        # TODO: decide how to do with when time isn't synced
+        if self._sync_time:
+            self._image_widget.add_event_handler(self._iw_current_index_changed, "current_index")
+
+        self._block_select_component_handler = False
+        self._block_clear_selection_handler = False
+
+    @property
+    def figure(self) -> fpl.Figure:
+        return self._image_widget.figure
+
+    @property
+    def original_contours_textures(self) -> np.ndarray:
+        return self._original_contours_textures
+
+    def _create_contours(self):
+        # first clear any existing contour graphics
+        for subplot in self.figure:
+            if "contours" in subplot:
+                subplot["contours"].clear_event_handlers()
+                subplot.delete_graphic(subplot["contours"])
+
+        if self._sync_selection:
+            # contours same for all data models, can just use first data model to create them
+            self._original_contours_textures = [texture_from_contours(
                 contours=self._data_models[0].contours,
                 fov_shape=self._data_models[0].fov_shape,
-            )
+            )]
 
             # the first image graphic
-            image_graphic_1 = fpl.ImageGraphic(
-                self._original_contours_texture,
+            contours_graphic = fpl.ImageGraphic(
+                self._original_contours_textures[0],
                 isolated_buffer=True,  # so we can reset the data using the original texture array to clear highlights
                 vmin=0,  # makes it easier to set the colors of the contour highlights using vals between 0 - 1
                 vmax=1,
@@ -68,7 +92,7 @@ class MovieWidget(ModelView):
                 offset=(0, 0, -0.1),  # make sure it's above the calcium video image
             )
 
-            self._image_widget.figure[self._data_models[0].name].add_graphic(image_graphic_1)
+            self._image_widget.figure[self._data_models[0].name].add_graphic(contours_graphic)
 
             # make ImageGraphic for the rest of the data models
             # we already have the first ImageGraphic so we just
@@ -76,7 +100,7 @@ class MovieWidget(ModelView):
             # the first ImageGraphic
             for dm in self._data_models[1:]:
                 self._image_widget.figure[dm.name].add_image(
-                    data=image_graphic_1.data,  # this will use the same data buffer
+                    data=contours_graphic.data,  # this will use the same data buffer
                     vmin=0,
                     vmax=1,
                     name="contours",
@@ -84,7 +108,6 @@ class MovieWidget(ModelView):
                 )
 
         else:
-            self._original_contours_texture = None
             self._original_contours_textures = list()
 
             for dm in self._data_models:
@@ -101,18 +124,11 @@ class MovieWidget(ModelView):
                     partial(self._image_clicked, i), "double_click"
                 )
 
-        # TODO: decide how to do with when time isn't synced
-        if self._sync_time:
-            self._image_widget.add_event_handler(self._iw_current_index_changed, "indices")
+    def _set_data_handler(self, dm_index: int, _: None):
+        for dm in self._data_models:
+            # clear all selections
+            dm.clear_selection()
 
-        self._block_select_component_handler = False
-        self._block_clear_selection_handler = False
-
-    @property
-    def figure(self) -> fpl.Figure:
-        return self._image_widget.figure
-
-    def _set_data_handler(self, dm_index):
         # ImageWidget.set_data() will ignore any arrays that are already displayed by the ImageWidget
         # so we can just naively use set_data() and only the array which has changed will be updated!
         self._image_widget.set_data(
@@ -121,11 +137,13 @@ class MovieWidget(ModelView):
             reset_indices=False
         )
 
+        self._create_contours()
+
     def _frame_index_changed(self, dm_index, index):
-        if self._image_widget.indices["t"] == index:
+        if self._image_widget.current_index["t"] == index:
             return
 
-        self._image_widget.indices["t"] = index
+        self._image_widget.current_index = {"t": index}
 
     def _time_index_changed(self):
         pass
@@ -163,7 +181,7 @@ class MovieWidget(ModelView):
 
         # if the buffer is shared (synced selection), then this will clear ALL contour ImageGraphic textures
         if self._sync_selection:
-            self._image_widget.figure[name]["contours"].data = self._original_contours_texture
+            self._image_widget.figure[name]["contours"].data = self._original_contours_textures[0]
 
         else:
             # if the contours are independent per-subplot, then this will change it for just that subplot
@@ -186,6 +204,8 @@ class MovieWidget(ModelView):
         col, row = ev.pick_info["index"]
 
         index = self._data_models[dm_index].find_closest_components((row, col))[0]
+
+        # print("image clicked")
 
         if self._sync_selection:
             # set the selection of the first data model, shared buffer sets the visual representation (contour color)

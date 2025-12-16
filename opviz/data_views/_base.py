@@ -2,13 +2,13 @@ from functools import partial
 
 import fastplotlib as fpl
 
-from ..data_model import DataModel, EVENT_TYPES
+from ..data_model import Model, EVENT_TYPES
 
 
 class ModelView:
     def __init__(
             self,
-            data_models: list[DataModel],
+            data_models: list[Model],
             sync_time: bool,
             sync_selection: bool,
     ):
@@ -28,13 +28,22 @@ class ModelView:
     def figure(self) -> fpl.Figure:
         pass
 
+    # @property
+    # def data_models(self) -> list[Model]:
+    #     return self._data_models
+    #
+    # @data_models.setter
+    # def data_models(self, new_models: list[Model]):
+    #     self._data_models[:] = new_models
+    #     self._set_data_handler()
+
     def show(self, **kwargs):
-        self.figure.show(**kwargs)
+        return self.figure.show(**kwargs)
 
     def _select_component_handler(self, dm_index: int, index: int):
         pass
 
-    def _clear_selection_handler(self, dm_index: int, _: None):
+    def _clear_selection_handler(self, dm_index: int, _: None = None):
         pass
 
     def _selection_cmap_handler(self, dm_index: int, cmap_name: str):
@@ -54,5 +63,6 @@ class ModelView:
         """set which label (ex: metric, cluster identify, etc.) is currently displayed"""
         pass
 
-    def _set_data_handler(self, dm_index):
-        """reset everything in the view"""
+    def _set_data_handler(self, dm_index: int, _: None):
+        """reset everything in the view for this data model"""
+        pass

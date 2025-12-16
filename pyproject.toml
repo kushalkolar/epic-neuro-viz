@@ -1,7 +1,8 @@
 # ===== Project info
 
 [project]
-dynamic = ["version"]
+#dynamic = ["version"]
+version = "0.0.1"
 name = "opviz"
 description = "Next-gen Visualization System for Optical Physiology"
 readme = "README.md"
@@ -25,42 +26,12 @@ keywords = [
 requires-python = ">= 3.11"
 dependencies = [
     "numpy>=1.23.0",
-    "fastplotlib[imgui]==0.5.2",
-    "joblib",
-    "masknmf",
+#    "fastplotlib[imgui]==0.6.1",
+#    "joblib",
+#    "masknmf-toolbox",
     # (this comment keeps this list multiline in VSCode)
 ]
 
-[project.optional-dependencies]
-docs = [
-    "sphinx",
-    "sphinx-gallery",
-    "pydata-sphinx-theme",
-    "glfw",
-    "ipywidgets>=8.0.0,<9",
-    "sphinx-copybutton",
-    "sphinx-design",
-    "pandoc",
-    "imageio[ffmpeg]",
-    "matplotlib",
-]
-notebook = [
-    "jupyterlab",
-    "jupyter-rfb>=0.5.1",
-    "ipywidgets>=8.0.0,<9",
-    "sidecar",
-]
-tests = [
-    "pytest",
-    "nbmake",
-    "black",
-    "scipy",
-    "imageio[ffmpeg]",
-    "scikit-learn",
-    "tqdm",
-]
-
-dev = ["fastplotlib[docs,notebook,tests]"]
 
 [project.urls]
 Homepage = ""
