@@ -23,6 +23,18 @@ def texture_from_contours(
     return texture_data
 
 
+def tooltip_info(curr_graphic: fpl.ImageGraphic, pick_info: dict) -> str:
+    # get index of the scatter point that is being hovered
+    col, row = pick_info["index"]
+
+    data_val = curr_graphic.data[row, col]
+
+    info = (f"{data_val:e}")
+
+    # return this string to display it in the tooltip
+    return info
+
+
 class MovieWidget(ModelView):
     def __init__(
             self,
@@ -92,20 +104,23 @@ class MovieWidget(ModelView):
                 offset=(0, 0, -0.1),  # make sure it's above the calcium video image
             )
 
+            contours_graphic.tooltip_format = partial(tooltip_info, self._image_widget.managed_graphics[0])
+
             self._image_widget.figure[self._data_models[0].name].add_graphic(contours_graphic)
 
             # make ImageGraphic for the rest of the data models
             # we already have the first ImageGraphic so we just
             # need to make the rest and share the buffer with
             # the first ImageGraphic
-            for dm in self._data_models[1:]:
-                self._image_widget.figure[dm.name].add_image(
+            for ig, dm in zip(self._image_widget.managed_graphics[1:], self._data_models[1:]):
+                cg = self._image_widget.figure[dm.name].add_image(
                     data=contours_graphic.data,  # this will use the same data buffer
                     vmin=0,
                     vmax=1,
                     name="contours",
                     offset=(0, 0, -0.1)
                 )
+                cg.tooltip_format = partial(tooltip_info, ig)
 
         else:
             self._original_contours_textures = list()
