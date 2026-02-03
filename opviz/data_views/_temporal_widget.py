@@ -4,6 +4,7 @@ import fastplotlib as fpl
 
 from ..data_model import OphysModel
 from ._base import ModelView
+import pygfx
 
 class TemporalWidget(ModelView):
     def __init__(
@@ -21,8 +22,20 @@ class TemporalWidget(ModelView):
 
         self._separation = separation
 
+        camera_list = [pygfx.PerspectiveCamera(fov=0) for k in range(len(data_models))]
+        controller_list = [pygfx.PanZoomController(camera_list[k]) for k in range(len(data_models))]
+
+        for k in range(len(controller_list)):
+            for j in range(len(camera_list)):
+                if k == j:
+                    continue
+                else:
+                    controller_list[k].add_camera(camera_list[j], include_state={"x", "width"})
+
         self._figure = fpl.Figure(
             shape=(len(data_models), 1),
+            cameras=camera_list,
+            controllers=controller_list,
             names=[dm.name for dm in data_models],
             size=(1300, 200 * len(data_models))
         )
