@@ -63,6 +63,13 @@ class MovieWidget(ModelView):
         for subplot in self.figure:
             subplot.toolbar = False
 
+        # creator a cursor in crosshair mode
+        cursor = fpl.Cursor(color="w")
+
+        # add all subplots to the cursor
+        for subplot in self.figure:
+            cursor.add_subplot(subplot)
+
         self._create_contours()
 
         # TODO: decide how to do with when time isn't synced
